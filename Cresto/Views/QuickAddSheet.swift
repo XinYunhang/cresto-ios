@@ -49,7 +49,7 @@ struct QuickAddSheet: View {
     var body: some View {
         Group {
             if expanded {
-                TaskEditor(defaultTitle: text, defaultDate: choice.date)
+                TaskEditor(defaultDate: choice.date, defaultTitle: text)
             } else {
                 quickContent
             }
