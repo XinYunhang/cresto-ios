@@ -1,0 +1,72 @@
+name: Unsigned IPA
+
+# 出未签名 IPA，证书由你本地签。不需要任何 secret。
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select newest Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Fetch card art
+        run: bash scripts/fetch_cards.sh
+
+      - name: Write local profile
+        env:
+          BIRTHDAY_SECRET: ${{ secrets.BIRTHDAY }}
+        run: |
+          if [ -n "${BIRTHDAY_SECRET:-}" ]; then
+            bash scripts/make_profile.sh "$BIRTHDAY_SECRET"
+          else
+            echo "no BIRTHDAY secret, falling back to neutral birthday"
+          fi
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Archive without signing
+        run: |
+          set -o pipefail
+          xcodebuild archive \
+            -project Cresto.xcodeproj \
+            -scheme Cresto \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/Cresto.xcarchive" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_IDENTITY="" \
+            PROVISIONING_PROFILE_SPECIFIER="" \
+            | tee "$RUNNER_TEMP/archive.log"
+
+      - name: Package Payload into IPA
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/Cresto.xcarchive/Products/Applications/Cresto.app"
+          test -d "$APP" || { echo "app 没打出来"; exit 1; }
+          mkdir -p "$RUNNER_TEMP/Payload"
+          cp -R "$APP" "$RUNNER_TEMP/Payload/"
+          cd "$RUNNER_TEMP"
+          ditto -c -k --sequesterRsrc --keepParent Payload Cresto-unsigned.ipa
+          ls -lh Cresto-unsigned.ipa
+          /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP/Info.plist"
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: Cresto-unsigned-ipa
+          path: ${{ runner.temp }}/Cresto-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 30
