@@ -221,7 +221,7 @@ enum TimetableOCR {
         let noise = ["上午", "下午", "中午", "晚上", "时间", "课表", "节次", "星期", "备注", "课程"]
         if noise.contains(where: { text == $0 }) { return true }
         // 纯数字 / 纯节次写法（1、1-2、第3节）不算课名
-        if text.range(of: "^[0-9\s\-–~·、,，.第节次]+$", options: .regularExpression) != nil { return true }
+        if text.range(of: #"^[0-9\s\-–~·、,，.第节次]+$"#, options: .regularExpression) != nil { return true }
         return false
     }
 
