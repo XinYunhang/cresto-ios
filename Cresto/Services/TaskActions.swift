@@ -16,10 +16,12 @@ enum TaskActions {
         }
         NotificationScheduler.sync(task)
         try? context.save()
+        AppLog.info("待办「\(task.title)」→ \(task.isCompleted ? "完成" : "未完成")")
     }
 
     static func delete(_ task: TaskItem, in context: ModelContext) {
         NotificationScheduler.cancel(id: task.id)
+        AppLog.info("删除待办：\(task.title)")
         context.delete(task)
         try? context.save()
     }

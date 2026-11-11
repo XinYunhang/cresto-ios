@@ -367,7 +367,7 @@ struct TarotCardDetail: View {
 
 struct CardArt: View {
     let name: String
-    var grayscale = true
+    var grayscale = false
 
     var body: some View {
         Group {

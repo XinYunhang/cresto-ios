@@ -17,6 +17,7 @@ struct OverviewView: View {
     var onOpenTarot: () -> Void
     var onOpenTime: () -> Void
     var onOpenTasks: () -> Void = {}
+    var onOpenSettings: () -> Void = {}
 
     @State private var editing: TaskItem?
     @State private var isEditorPresented = false
@@ -26,38 +27,17 @@ struct OverviewView: View {
         draw: DailyTarot?,
         onOpenTarot: @escaping () -> Void,
         onOpenTime: @escaping () -> Void,
-        onOpenTasks: @escaping () -> Void = {}
+        onOpenTasks: @escaping () -> Void = {},
+        onOpenSettings: @escaping () -> Void = {}
     ) {
         self.draw = draw
         self.onOpenTarot = onOpenTarot
         self.onOpenTime = onOpenTime
         self.onOpenTasks = onOpenTasks
+        self.onOpenSettings = onOpenSettings
     }
 
     private var fortune: FortuneSnapshot { FortuneEngine.snapshot() }
-
-    private var usageMap: [String: DailyUsage] {
-        Dictionary(usages.map { ($0.dateKey, $0) }, uniquingKeysWith: { first, _ in first })
-    }
-
-    private var todayMinutes: Int { usageMap[UsageStore.todayKey]?.minutes ?? 0 }
-
-    private var yesterdayMinutes: Int {
-        let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: Date()) ?? Date()
-        return usageMap[UsageStore.key(for: yesterday)]?.minutes ?? 0
-    }
-
-    /// 近 12 周（84 天），列优先：每列一周
-    private var usageCells: [UsageStats.Cell] {
-        let calendar = Calendar.current
-        let today = calendar.startOfDay(for: Date())
-        guard let weekStart = calendar.dateInterval(of: .weekOfYear, for: today)?.start,
-              let start = calendar.date(byAdding: .day, value: -77, to: weekStart) else { return [] }
-        return (0..<84).compactMap { offset in
-            guard let day = calendar.date(byAdding: .day, value: offset, to: start) else { return nil }
-            return UsageStats.cell(for: day, usages: usageMap, tasks: allTasks)
-        }
-    }
 
     private var todayTasks: [TaskItem] {
         let calendar = Calendar.current
@@ -69,7 +49,13 @@ struct OverviewView: View {
     }
 
     var body: some View {
-        ScrollView(.vertical, showsIndicators: false) {
+        let digest = UsageDigest.build(
+            dates: UsageDigest.heatDates(weeks: 12),
+            usages: usages,
+            tasks: allTasks
+        )
+
+        return ScrollView(.vertical, showsIndicators: false) {
             VStack(spacing: Theme.cardGap) {
                 header
                 FortuneCard(fortune: fortune)
@@ -90,9 +76,9 @@ struct OverviewView: View {
                 )
                 TarotMiniCard(draw: draw, action: onOpenTarot)
                 UsageCard(
-                    todayMinutes: todayMinutes,
-                    yesterdayMinutes: yesterdayMinutes,
-                    cells: usageCells,
+                    today: digest.today,
+                    yesterday: digest.yesterday,
+                    days: digest.days,
                     action: onOpenTime
                 )
             }
@@ -123,35 +109,18 @@ struct OverviewView: View {
 
             Spacer(minLength: 12)
 
-            HStack(spacing: 9) {
-                Button {
-                    // 之后接 dsh 远程：跳转到终端页
-                } label: {
-                    Image(systemName: "terminal")
-                        .font(.system(size: 16))
-                        .foregroundStyle(Theme.text)
-                        .frame(width: 36, height: 36)
-                        .background(Circle().fill(Color.white.opacity(0.05)))
-                        .overlay(Circle().strokeBorder(Theme.stroke, lineWidth: 1))
-                        .overlay(alignment: .topTrailing) {
-                            Circle()
-                                .fill(Theme.online)
-                                .frame(width: 5, height: 5)
-                                .overlay(Circle().strokeBorder(Theme.bg, lineWidth: 2))
-                                .padding(6)
-                        }
-                }
-                .buttonStyle(PressableStyle())
-                .accessibilityLabel("DSH 远程连接")
-
-                Text("N")
-                    .font(.system(size: 14, weight: .medium))
+            Button {
+                onOpenSettings()
+            } label: {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 16))
                     .foregroundStyle(Theme.text)
                     .frame(width: 36, height: 36)
-                    .background(Circle().fill(Color.white.opacity(0.07)))
+                    .background(Circle().fill(Color.white.opacity(0.05)))
                     .overlay(Circle().strokeBorder(Theme.stroke, lineWidth: 1))
-                    .accessibilityHidden(true)
             }
+            .buttonStyle(PressableStyle())
+            .accessibilityLabel("设置与日志")
             .padding(.top, 2)
         }
         .padding(.horizontal, 2)
@@ -370,10 +339,13 @@ struct TarotMiniCard: View {
 // MARK: - 使用时间（摘要）
 
 struct UsageCard: View {
-    let todayMinutes: Int
-    let yesterdayMinutes: Int
-    let cells: [UsageStats.Cell]
+    let today: UsageDigest.Day?
+    let yesterday: UsageDigest.Day?
+    let days: [UsageDigest.Day]
     var action: () -> Void
+
+    private var todayMinutes: Int { today?.minutes ?? 0 }
+    private var yesterdayMinutes: Int { yesterday?.minutes ?? 0 }
 
     private var deltaText: String {
         guard yesterdayMinutes > 0 else {
@@ -421,7 +393,7 @@ struct UsageCard: View {
 
                     Spacer(minLength: 12)
 
-                    MiniHeatmap(cells: cells)
+                    MiniHeatmap(days: days)
                 }
             }
             .contentShape(RoundedRectangle(cornerRadius: Theme.cardCorner, style: .continuous))
@@ -432,20 +404,20 @@ struct UsageCard: View {
 }
 
 struct MiniHeatmap: View {
-    let cells: [UsageStats.Cell]
+    let days: [UsageDigest.Day]
 
     private let size: CGFloat = 8
     private let gap: CGFloat = 3
 
     var body: some View {
-        let columnCount = max(1, cells.count / 7)
+        let columnCount = max(1, days.count / 7)
         HStack(alignment: .bottom, spacing: gap) {
             ForEach(0..<columnCount, id: \.self) { column in
                 VStack(spacing: gap) {
                     ForEach(0..<7, id: \.self) { row in
                         let index = column * 7 + row
                         RoundedRectangle(cornerRadius: 2, style: .continuous)
-                            .fill(HeatScale.color(for: index < cells.count ? cells[index].level : 0))
+                            .fill(HeatScale.color(for: index < days.count ? days[index].level : 0))
                             .frame(width: size, height: size)
                     }
                 }

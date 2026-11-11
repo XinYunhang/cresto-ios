@@ -8,6 +8,7 @@ struct RootView: View {
     @State private var tab: AppTab = .overview
     @State private var isQuickAddPresented = false
     @State private var isCourseEditorPresented = false
+    @State private var isSettingsPresented = false
     @State private var todayDraw: DailyTarot?
     @State private var activeSince: Date?
 
@@ -40,6 +41,10 @@ struct RootView: View {
         .preferredColorScheme(.dark)
         .onAppear {
             if activeSince == nil { activeSince = Date() }
+            AppLog.info("App 启动")
+        }
+        .onChange(of: tab) { _, newValue in
+            AppLog.info("切换到 \(newValue.title)")
         }
         .task {
             if todayDraw == nil {
@@ -62,6 +67,9 @@ struct RootView: View {
         }
         .sheet(isPresented: $isCourseEditorPresented) {
             CourseEditor(course: nil, slot: nil)
+        }
+        .sheet(isPresented: $isSettingsPresented) {
+            SettingsView()
         }
     }
 
@@ -106,7 +114,8 @@ struct RootView: View {
                 draw: todayDraw,
                 onOpenTarot: { tab = .tarot },
                 onOpenTime: { tab = .time },
-                onOpenTasks: { tab = .tasks }
+                onOpenTasks: { tab = .tasks },
+                onOpenSettings: { isSettingsPresented = true }
             )
         case .tasks:
             TasksView()

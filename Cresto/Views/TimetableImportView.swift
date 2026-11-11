@@ -205,8 +205,10 @@ struct TimetableImportView: View {
                     throw OCRError.invalidImage
                 }
                 courses = try await TimetableOCR.recognize(imageData: data)
+                AppLog.info("课表识别完成：识别到 \(courses.count) 条")
             } catch {
                 errorText = error.localizedDescription
+                AppLog.error("课表识别失败：\(error.localizedDescription)")
             }
             isWorking = false
         }
@@ -256,6 +258,7 @@ struct TimetableImportView: View {
         }
 
         try? context.save()
+        AppLog.info("导入课表：\(groups.count) 门课 / \(picked.count) 个时段")
         dismiss()
     }
 

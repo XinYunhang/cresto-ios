@@ -39,15 +39,11 @@ struct GlassTabBar: View {
                 selection = tab
             }
         } label: {
-            VStack(spacing: 4) {
-                Image(systemName: tab.symbol)
-                    .font(.system(size: 20, weight: .regular))
-                Text(tab.title)
-                    .font(.system(size: 11))
-            }
-            .foregroundStyle(selection == tab ? Theme.text : Theme.textSecondary)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 9)
+            Image(systemName: tab.symbol)
+                .font(.system(size: 21, weight: .regular))
+                .foregroundStyle(selection == tab ? Theme.text : Theme.textSecondary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 16)
             .background {
                 if selection == tab {
                     Capsule()
@@ -61,6 +57,7 @@ struct GlassTabBar: View {
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(tab.title)
         .accessibilityAddTraits(selection == tab ? .isSelected : [])
     }
 

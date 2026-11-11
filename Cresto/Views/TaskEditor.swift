@@ -442,6 +442,7 @@ struct TaskEditor: View {
 
         NotificationScheduler.sync(target)
         try? context.save()
+        AppLog.info((task == nil ? "新建待办：" : "编辑待办：") + target.title)
         dismiss()
     }
 }

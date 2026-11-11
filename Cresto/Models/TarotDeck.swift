@@ -220,5 +220,6 @@ enum TarotService {
         draw.isReversed = Bool.random()
         draw.drawnAt = Date()
         try? context.save()
+        AppLog.info("重新抽牌：\(draw.card.name) \(draw.isReversed ? "逆位" : "正位")")
     }
 }

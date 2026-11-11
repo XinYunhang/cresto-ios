@@ -20,12 +20,13 @@ final class DailyUsage {
 }
 
 enum UsageStore {
-    static func key(for date: Date) -> String {
+    private static let formatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
-        return formatter.string(from: date)
-    }
+        return formatter
+    }()
 
+    static func key(for date: Date) -> String { formatter.string(from: date) }
     static var todayKey: String { key(for: Date()) }
 
     @discardableResult
@@ -49,38 +50,33 @@ enum UsageStore {
         record.updatedAt = Date()
         try? context.save()
     }
-
-    static func map(in context: ModelContext) -> [String: DailyUsage] {
-        let all = (try? context.fetch(FetchDescriptor<DailyUsage>())) ?? []
-        return Dictionary(all.map { ($0.dateKey, $0) }, uniquingKeysWith: { first, _ in first })
-    }
 }
 
-// MARK: - 合成评分
-
-enum UsageStats {
-    struct Cell: Identifiable {
+/// 一次算完所有统计，避免在 body 里对每个格子重复遍历任务。
+/// 复杂度 O(任务数 + 天数)。之前那是 O(天数 × 任务数) × 每次 body，切页就会卡住。
+struct UsageDigest {
+    struct Day: Identifiable {
         let id: String
         let date: Date
         let minutes: Int
-        let dueCount: Int
-        let doneCount: Int
+        let due: Int
+        let done: Int
         let level: Int
-
-        /// 完成率，当天没有待办时就是使用强度
-        var completionRate: Double {
-            dueCount == 0 ? 0 : Double(doneCount) / Double(dueCount)
-        }
     }
 
-    /// 使用时长封顶 3 小时，算「用满了」
+    let days: [Day]
+
+    /// 使用时长封顶 3 小时算「用满了」
     private static let minuteCap: Double = 180
 
-    static func level(minutes: Int, dueCount: Int, doneCount: Int) -> Int {
+    static func level(minutes: Int, due: Int, done: Int) -> Int {
         let usageScore = min(1, Double(minutes) / minuteCap)
-        let rate = dueCount == 0 ? usageScore : Double(doneCount) / Double(dueCount)
-        let mixed = dueCount == 0 ? usageScore : usageScore * 0.55 + rate * 0.45
-
+        let mixed: Double
+        if due == 0 {
+            mixed = usageScore
+        } else {
+            mixed = usageScore * 0.55 + Double(done) / Double(due) * 0.45
+        }
         switch mixed {
         case ..<0.12: return 0
         case ..<0.32: return 1
@@ -90,53 +86,72 @@ enum UsageStats {
         }
     }
 
-    /// 某一天的任务情况：当天到期的算总数，完成的算处理数
-    static func taskCounts(for date: Date, tasks: [TaskItem]) -> (due: Int, done: Int) {
-        let calendar = Calendar.current
-        let day = calendar.startOfDay(for: date)
-        var due = 0
-        var done = 0
+    static func build(dates: [Date], usages: [DailyUsage], tasks: [TaskItem]) -> UsageDigest {
+        let usageMap = Dictionary(usages.map { ($0.dateKey, $0.minutes) }, uniquingKeysWith: { first, _ in first })
+
+        // 任务按「到期日」一次性分桶
+        var counts: [String: (due: Int, done: Int)] = [:]
+        counts.reserveCapacity(max(16, dates.count))
         for task in tasks {
-            guard let taskDate = task.dueDate else { continue }
-            guard calendar.isDate(calendar.startOfDay(for: taskDate), inSameDayAs: day) else { continue }
-            due += 1
-            if task.isCompleted { done += 1 }
+            guard let due = task.dueDate else { continue }
+            let key = UsageStore.key(for: due)
+            var entry = counts[key] ?? (0, 0)
+            entry.due += 1
+            if task.isCompleted { entry.done += 1 }
+            counts[key] = entry
         }
-        return (due, done)
+
+        let days = dates.map { date -> Day in
+            let key = UsageStore.key(for: date)
+            let minutes = usageMap[key] ?? 0
+            let entry = counts[key] ?? (0, 0)
+            return Day(
+                id: key,
+                date: date,
+                minutes: minutes,
+                due: entry.due,
+                done: entry.done,
+                level: level(minutes: minutes, due: entry.due, done: entry.done)
+            )
+        }
+        return UsageDigest(days: days)
     }
 
-    static func cell(
-        for date: Date,
-        usages: [String: DailyUsage],
-        tasks: [TaskItem]
-    ) -> Cell {
-        let key = UsageStore.key(for: date)
-        let minutes = usages[key]?.minutes ?? 0
-        let counts = taskCounts(for: date, tasks: tasks)
-        return Cell(
-            id: key,
-            date: date,
-            minutes: minutes,
-            dueCount: counts.due,
-            doneCount: counts.done,
-            level: level(minutes: minutes, dueCount: counts.due, doneCount: counts.done)
-        )
-    }
-
-    /// 连续记录天数（level > 0）
-    static func streak(cells: [Cell], today: Date = Date()) -> Int {
+    /// 从「(周数-1) 周前的周一」到「本周周日」的连续日期
+    static func heatDates(weeks: Int, endingAt date: Date = Date()) -> [Date] {
         let calendar = Calendar.current
-        var streak = 0
-        var day = calendar.startOfDay(for: today)
-        let map = Dictionary(cells.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-
-        while true {
-            let key = UsageStore.key(for: day)
-            guard let cell = map[key], cell.level > 0 else { break }
-            streak += 1
-            guard let previous = calendar.date(byAdding: .day, value: -1, to: day) else { break }
-            day = previous
+        let today = calendar.startOfDay(for: date)
+        guard let weekStart = calendar.dateInterval(of: .weekOfYear, for: today)?.start,
+              let start = calendar.date(byAdding: .day, value: -(weeks - 1) * 7, to: weekStart) else {
+            return [today]
         }
-        return streak
+        return (0..<(weeks * 7)).compactMap { offset in
+            calendar.date(byAdding: .day, value: offset, to: start)
+        }
+    }
+
+    /// 只取已经发生的日子，最后一个是今天
+    var pastDays: [Day] {
+        let today = Calendar.current.startOfDay(for: Date())
+        return days.filter { $0.date <= today }
+    }
+
+    var today: Day? { pastDays.last }
+    var yesterday: Day? { pastDays.dropLast().last }
+
+    var lastSeven: [Day] { Array(pastDays.suffix(7)) }
+
+    var streak: Int {
+        var count = 0
+        for day in pastDays.reversed() {
+            guard day.level > 0 else { break }
+            count += 1
+        }
+        return count
+    }
+
+    func day(for date: Date) -> Day? {
+        let key = UsageStore.key(for: date)
+        return days.first { $0.id == key }
     }
 }
