@@ -126,6 +126,7 @@ struct RootView: View {
 }
 
 /// SwiftUI 预览用的内存容器
+@MainActor
 enum PreviewData {
     static let container: ModelContainer = {
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
