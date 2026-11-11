@@ -28,9 +28,16 @@ FAB 选「今天 / 明天 / 今晚 20:00 / 不设日期」直接加；点「时�
 
 ## 在 GitHub 上打包 IPA
 
-仓库里带了 `project.yml`（XcodeGen）和 `.github/workflows/build.yml`，推上去就能出 IPA，不需要 Mac。
+仓库里带了 `project.yml`（XcodeGen）和三个 workflow：
 
-**1. 本地把两张图拉下来**（卡面不进仓库，版权原因）：
+- **`Unsigned IPA`**：出未签名 IPA，证书你自己在本地签。**不需要任何 secret**。
+  Actions → Unsigned IPA → Run workflow，产物在 Artifacts 里，bundle id 是 `com.nevoit.Cresto`。
+- **`Compile check`**：每次 push 自动跑，只验证能不能编译。
+- **`Build IPA`**：让 CI 直接出签名版（可选，需要配下面的 secret）。
+
+**如果你要走 CI 签名（可选）**：
+
+**1. 本地把卡面拉下来**（不进仓库，版权原因）：
 
 ```bash
 bash scripts/fetch_cards.sh
