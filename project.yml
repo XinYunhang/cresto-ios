@@ -2,7 +2,7 @@ name: Cresto
 options:
   bundleIdPrefix: com.nevoit
   deploymentTarget:
-    iOS: "26.0"
+    iOS: "17.0"
   createIntermediateGroups: true
 
 settings:
@@ -16,7 +16,7 @@ targets:
   Cresto:
     type: application
     platform: iOS
-    deploymentTarget: "26.0"
+    deploymentTarget: "17.0"
     sources:
       - path: Cresto
         excludes:

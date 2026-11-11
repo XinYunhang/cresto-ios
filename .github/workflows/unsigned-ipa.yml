@@ -62,6 +62,7 @@ jobs:
           ditto -c -k --sequesterRsrc --keepParent Payload Cresto-unsigned.ipa
           ls -lh Cresto-unsigned.ipa
           /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP/Info.plist"
+          /usr/libexec/PlistBuddy -c "Print :MinimumOSVersion" "$APP/Info.plist"
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
