@@ -1,0 +1,14 @@
+.DS_Store
+*.xcodeproj
+*.xcworkspace
+DerivedData/
+build/
+*.ipa
+*.p12
+*.mobileprovision
+
+# 卡面版权受限，不进仓库；用 scripts/fetch_cards.sh 拉
+Cresto/Resources/Cards/*.webp
+Cresto/Resources/profile.plist
+
+_gh_login.log
