@@ -15,37 +15,29 @@ struct OverviewView: View {
 
     let draw: DailyTarot?
     var onOpenTarot: () -> Void
-    var onOpenTime: () -> Void
-    var onOpenTasks: () -> Void = {}
-    var onOpenSettings: () -> Void = {}
+    var onOpenTasks: () -> Void
+    var onAddTask: () -> Void
+    var onOpenSettings: () -> Void
 
-    @State private var editing: TaskItem?
-    @State private var isEditorPresented = false
-    @State private var isNewTask = false
+    @State private var showTasks = true
+    @State private var showFortune = false
+    @State private var showTarot = false
+    @State private var showTime = false
+    @State private var isSearchPresented = false
+    @State private var isTimePresented = false
 
     init(
         draw: DailyTarot?,
         onOpenTarot: @escaping () -> Void,
-        onOpenTime: @escaping () -> Void,
-        onOpenTasks: @escaping () -> Void = {},
-        onOpenSettings: @escaping () -> Void = {}
+        onOpenTasks: @escaping () -> Void,
+        onAddTask: @escaping () -> Void,
+        onOpenSettings: @escaping () -> Void
     ) {
         self.draw = draw
         self.onOpenTarot = onOpenTarot
-        self.onOpenTime = onOpenTime
         self.onOpenTasks = onOpenTasks
+        self.onAddTask = onAddTask
         self.onOpenSettings = onOpenSettings
-    }
-
-    private var fortune: FortuneSnapshot { FortuneEngine.snapshot() }
-
-    private var todayTasks: [TaskItem] {
-        let calendar = Calendar.current
-        let todays = openTasks.filter { task in
-            guard let due = task.dueDate else { return false }
-            return calendar.isDateInToday(due) || task.isOverdue
-        }
-        return Array((todays.isEmpty ? openTasks : todays).prefix(3))
     }
 
     var body: some View {
@@ -54,120 +46,140 @@ struct OverviewView: View {
             usages: usages,
             tasks: allTasks
         )
+        let fortune = FortuneEngine.snapshot()
 
         return ScrollView(.vertical, showsIndicators: false) {
             VStack(spacing: Theme.cardGap) {
-                header
-                FortuneCard(fortune: fortune)
-                TodayTasksCard(
-                    tasks: todayTasks,
-                    totalOpen: openTasks.count,
-                    onAdd: {
-                        editing = nil
-                        isNewTask = true
-                        isEditorPresented = true
-                    },
-                    onSelect: { task in
-                        editing = task
-                        isNewTask = false
-                        isEditorPresented = true
-                    },
-                    onOpenAll: onOpenTasks
-                )
-                TarotMiniCard(draw: draw, action: onOpenTarot)
-                UsageCard(
-                    today: digest.today,
-                    yesterday: digest.yesterday,
-                    days: digest.days,
-                    action: onOpenTime
-                )
+                topRow
+                greeting
+                searchField
+
+                FoldCard(title: "今日待办", summary: "\(openTasks.count) 项", isOpen: $showTasks) {
+                    taskList
+                }
+
+                FoldCard(title: "今日运势", summary: "\(fortune.score) 分 · \(fortune.headline)", isOpen: $showFortune) {
+                    fortuneBody(fortune)
+                }
+
+                FoldCard(title: "今日塔罗", summary: tarotSummary, isOpen: $showTarot) {
+                    tarotBody
+                }
+
+                FoldCard(title: "使用时间", summary: "今天 " + usageText(digest), isOpen: $showTime) {
+                    usageBody(digest)
+                }
+
+                Text("轻点展开")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.textTertiary)
+                    .padding(.top, 18)
             }
             .padding(.horizontal, Theme.screenPadding)
-            .padding(.top, 2)
-            .padding(.bottom, 132)
+            .padding(.bottom, 128)
         }
-        .sheet(isPresented: $isEditorPresented, onDismiss: { editing = nil }) {
-            if isNewTask {
-                TaskEditor()
-            } else {
-                TaskEditor(task: editing)
-            }
+        .sheet(isPresented: $isSearchPresented) {
+            SearchView()
+        }
+        .sheet(isPresented: $isTimePresented) {
+            TimeDetailSheet()
         }
     }
 
-    private var header: some View {
-        HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 5) {
-                Text(Date().formatted(.dateTime.month().day().weekday(.abbreviated)))
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.textSecondary)
-                Text(greeting)
-                    .font(.system(size: 26, weight: .medium))
-                    .foregroundStyle(Theme.text)
-                    .tracking(-0.5)
-            }
+    // MARK: 顶部
 
-            Spacer(minLength: 12)
-
-            Button {
-                onOpenSettings()
-            } label: {
-                Image(systemName: "gearshape")
-                    .font(.system(size: 16))
+    private var topRow: some View {
+        HStack {
+            Spacer()
+            Button(action: onOpenSettings) {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 17, weight: .medium))
                     .foregroundStyle(Theme.text)
-                    .frame(width: 36, height: 36)
-                    .background(Circle().fill(Color.white.opacity(0.05)))
-                    .overlay(Circle().strokeBorder(Theme.stroke, lineWidth: 1))
+                    .frame(width: 38, height: 38)
+                    .glassCircle()
             }
             .buttonStyle(PressableStyle())
-            .accessibilityLabel("设置与日志")
-            .padding(.top, 2)
+            .accessibilityLabel("设置")
         }
-        .padding(.horizontal, 2)
-        .padding(.bottom, 6)
+        .padding(.top, 2)
+        .padding(.bottom, 8)
     }
 
-    private var greeting: String {
-        switch Calendar.current.component(.hour, from: Date()) {
-        case 5..<11: return "早上好"
-        case 11..<14: return "中午好"
-        case 14..<18: return "下午好"
-        case 18..<23: return "晚上好"
-        default: return "还没睡？"
-        }
+    private var greeting: some View {
+        Text(Greeting.text)
+            .font(.system(size: 27, weight: .medium))
+            .tracking(-0.5)
+            .foregroundStyle(Theme.text)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 2)
+            .padding(.bottom, 14)
     }
-}
 
-// MARK: - 今日运势
-
-struct FortuneCard: View {
-    let fortune: FortuneSnapshot
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("今日运势").cardLabel()
+    private var searchField: some View {
+        Button {
+            isSearchPresented = true
+        } label: {
+            HStack(spacing: 9) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 15))
+                Text("搜索")
                 Spacer()
-                HStack(spacing: 1) {
-                    Text("详情")
-                    Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold))
-                }
-                .font(.system(size: 11.5))
-                .foregroundStyle(Theme.textTertiary)
             }
-            .padding(.bottom, 11)
+            .font(.system(size: 14))
+            .foregroundStyle(Theme.textTertiary)
+            .padding(.horizontal, 14)
+            .frame(height: 44)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Theme.surface)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.bottom, 4)
+    }
 
-            HStack(alignment: .lastTextBaseline, spacing: 14) {
-                HStack(alignment: .lastTextBaseline, spacing: 4) {
-                    Text("\(fortune.score)")
-                        .font(.system(size: 46, weight: .light))
-                        .tracking(-2)
-                        .foregroundStyle(Theme.text)
-                    Text("分")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.textTertiary)
+    // MARK: 待办
+
+    private var todayTasks: [TaskItem] {
+        let calendar = Calendar.current
+        let todays = openTasks.filter { task in
+            guard let due = task.dueDate else { return false }
+            return calendar.isDateInToday(due) || task.isOverdue
+        }
+        return Array((todays.isEmpty ? openTasks : todays).prefix(4))
+    }
+
+    private var taskList: some View {
+        VStack(spacing: 0) {
+            ForEach(todayTasks) { task in
+                TaskRowView(task: task, compact: true, onTap: onOpenTasks)
+            }
+
+            Button(action: onAddTask) {
+                HStack(spacing: 8) {
+                    Image(systemName: "plus").font(.system(size: 12, weight: .medium))
+                    Text("添加待办")
+                    Spacer()
                 }
+                .font(.system(size: 12.5))
+                .foregroundStyle(Theme.textTertiary)
+                .padding(.top, 12)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+    }
 
+    // MARK: 运势
+
+    private func fortuneBody(_ fortune: FortuneSnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .center, spacing: 14) {
+                Text("\(fortune.score)")
+                    .font(.system(size: 44, weight: .light))
+                    .tracking(-1.5)
+                    .foregroundStyle(Theme.text)
                 VStack(alignment: .leading, spacing: 5) {
                     Text(fortune.headline)
                         .font(.system(size: 15, weight: .medium))
@@ -188,7 +200,7 @@ struct FortuneCard: View {
                     AccentChip(text: keyword)
                 }
             }
-            .padding(.top, 11)
+            .padding(.top, 12)
 
             HStack(alignment: .top, spacing: 10) {
                 ForEach(fortune.metrics) { metric in
@@ -198,15 +210,9 @@ struct FortuneCard: View {
                             .foregroundStyle(Theme.textTertiary)
                         GeometryReader { geo in
                             ZStack(alignment: .leading) {
-                                Capsule().fill(Color.white.opacity(0.09))
+                                Capsule().fill(Theme.text.opacity(0.09))
                                 Capsule()
-                                    .fill(
-                                        LinearGradient(
-                                            colors: [Color.white.opacity(0.45), Theme.ink],
-                                            startPoint: .leading,
-                                            endPoint: .trailing
-                                        )
-                                    )
+                                    .fill(Theme.text.opacity(0.9))
                                     .frame(width: max(0, geo.size.width * metric.value))
                             }
                         }
@@ -214,107 +220,39 @@ struct FortuneCard: View {
                     }
                 }
             }
-            .padding(.top, 13)
+            .padding(.top, 14)
         }
-        .cardSurface()
     }
-}
 
-// MARK: - 今日待办
+    // MARK: 塔罗
 
-struct TodayTasksCard: View {
-    let tasks: [TaskItem]
-    let totalOpen: Int
-    var onAdd: () -> Void
-    var onSelect: (TaskItem) -> Void
-    var onOpenAll: () -> Void
+    private var tarotCard: TarotCard? { draw?.card }
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Button(action: onOpenAll) {
-                HStack {
-                    Text("今日待办").cardLabel()
-                    Spacer()
-                    Text("\(totalOpen) 项")
-                        .font(.system(size: 11.5))
-                        .monospacedDigit()
-                        .foregroundStyle(Theme.textTertiary)
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .padding(.bottom, 8)
-
-            if tasks.isEmpty {
-                Text("今天空着，挺好")
-                    .font(.system(size: 13))
-                    .foregroundStyle(Theme.textTertiary)
-                    .padding(.vertical, 12)
-            } else {
-                ForEach(tasks) { task in
-                    TaskRowView(task: task, compact: true, onTap: { onSelect(task) })
-                }
-            }
-
-            Rectangle()
-                .fill(Color.white.opacity(0.06))
-                .frame(height: 1)
-                .padding(.top, 3)
-
-            Button(action: onAdd) {
-                HStack(spacing: 8) {
-                    Image(systemName: "plus").font(.system(size: 12, weight: .medium))
-                    Text("添加待办")
-                    Spacer()
-                }
-                .font(.system(size: 12.5))
-                .foregroundStyle(Theme.textTertiary)
-                .padding(.top, 11)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-        }
-        .cardSurface()
+    private var tarotSummary: String {
+        guard let card = tarotCard else { return "还没抽" }
+        return "\(card.name) · \(card.positionText(reversed: draw?.isReversed ?? false))"
     }
-}
 
-// MARK: - 今日塔罗（摘要）
-
-struct TarotMiniCard: View {
-    let draw: DailyTarot?
-    var action: () -> Void
-
-    private var card: TarotCard? { draw?.card }
-
-    var body: some View {
-        Button(action: action) {
+    private var tarotBody: some View {
+        Button(action: onOpenTarot) {
             HStack(spacing: 13) {
-                CardArt(name: card?.slug ?? "00-fool")
-                    .frame(width: 44, height: 62)
+                CardArt(name: tarotCard?.slug ?? "00-fool")
+                    .frame(width: 46, height: 69)
                     .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .strokeBorder(Color.white.opacity(0.16), lineWidth: 1)
-                    )
-                    .shadow(color: .black.opacity(0.7), radius: 10, y: 5)
 
                 VStack(alignment: .leading, spacing: 0) {
-                    Text(card == nil ? "今日塔罗 · 还没抽" : "今日塔罗 · " + (card?.positionText(reversed: draw?.isReversed ?? false) ?? ""))
-                        .cardLabel()
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text(card?.name ?? "抽一张")
+                        Text(tarotCard?.name ?? "抽一张")
                             .font(.system(size: 15, weight: .medium))
                             .foregroundStyle(Theme.text)
-                        if let card {
+                        if let card = tarotCard {
                             Text(card.en)
                                 .font(.system(size: 11, design: .serif))
                                 .foregroundStyle(Theme.textTertiary)
                         }
                     }
-                    .padding(.top, 5)
-
                     HStack(spacing: 5) {
-                        ForEach(card?.keywords(reversed: draw?.isReversed ?? false) ?? ["每日一抽"], id: \.self) { keyword in
+                        ForEach(tarotCard?.keywords(reversed: draw?.isReversed ?? false) ?? ["每日一抽"], id: \.self) { keyword in
                             AccentChip(text: keyword, small: true)
                         }
                     }
@@ -327,81 +265,152 @@ struct TarotMiniCard: View {
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Theme.textTertiary)
             }
-            .padding(.horizontal, 15)
-            .padding(.vertical, 12)
-            .contentShape(RoundedRectangle(cornerRadius: Theme.cardCorner, style: .continuous))
+            .contentShape(Rectangle())
         }
-        .buttonStyle(PressableStyle())
-        .cardSurface(padding: 0)
+        .buttonStyle(.plain)
+    }
+
+    // MARK: 时间
+
+    private func usageText(_ digest: UsageDigest) -> String {
+        let minutes = digest.today?.minutes ?? 0
+        return "\(minutes / 60)h \(String(format: "%02d", minutes % 60))m"
+    }
+
+    private func usageBody(_ digest: UsageDigest) -> some View {
+        Button {
+            isTimePresented = true
+        } label: {
+            HStack(alignment: .bottom) {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(alignment: .lastTextBaseline, spacing: 0) {
+                        Text("\((digest.today?.minutes ?? 0) / 60)").font(.system(size: 26, weight: .light))
+                        Text("h").font(.system(size: 13)).foregroundStyle(Theme.textTertiary).padding(.horizontal, 3)
+                        Text(String(format: "%02d", (digest.today?.minutes ?? 0) % 60)).font(.system(size: 26, weight: .light))
+                        Text("m").font(.system(size: 13)).foregroundStyle(Theme.textTertiary).padding(.leading, 3)
+                    }
+                    .monospacedDigit()
+                    .foregroundStyle(Theme.text)
+
+                    HStack(spacing: 3) {
+                        Image(systemName: "arrow.up.right").font(.system(size: 10, weight: .semibold))
+                        Text(completionText(digest))
+                    }
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.textSecondary)
+                    .padding(.top, 8)
+                }
+                Spacer(minLength: 12)
+                MiniHeatmap(days: digest.days)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func completionText(_ digest: UsageDigest) -> String {
+        let due = digest.lastSeven.reduce(0) { $0 + $1.due }
+        let done = digest.lastSeven.reduce(0) { $0 + $1.done }
+        guard due > 0 else { return "本周暂无待办" }
+        return "本周完成 \(Int(Double(done) / Double(due) * 100))%"
     }
 }
 
-// MARK: - 使用时间（摘要）
+// MARK: - 折叠卡
 
-struct UsageCard: View {
-    let today: UsageDigest.Day?
-    let yesterday: UsageDigest.Day?
-    let days: [UsageDigest.Day]
-    var action: () -> Void
-
-    private var todayMinutes: Int { today?.minutes ?? 0 }
-    private var yesterdayMinutes: Int { yesterday?.minutes ?? 0 }
-
-    private var deltaText: String {
-        guard yesterdayMinutes > 0 else {
-            return todayMinutes > 0 ? "今天刚开始" : "还没有记录"
-        }
-        let diff = todayMinutes - yesterdayMinutes
-        if diff == 0 { return "和昨天持平" }
-        return diff > 0 ? "比昨天多 \(diff) 分钟" : "比昨天少 \(-diff) 分钟"
-    }
-
-    private var isUp: Bool { todayMinutes >= yesterdayMinutes }
+struct FoldCard<Content: View>: View {
+    let title: String
+    let summary: String
+    @Binding var isOpen: Bool
+    @ViewBuilder var content: Content
 
     var body: some View {
-        Button(action: action) {
-            VStack(alignment: .leading, spacing: 0) {
-                HStack {
-                    Text("使用时间").cardLabel()
-                    Spacer()
-                    Text("近 12 周")
-                        .font(.system(size: 11.5))
-                        .foregroundStyle(Theme.textTertiary)
-                }
-                .padding(.bottom, 11)
-
-                HStack(alignment: .bottom) {
-                    VStack(alignment: .leading, spacing: 0) {
-                        HStack(alignment: .lastTextBaseline, spacing: 0) {
-                            Text("\(todayMinutes / 60)").font(.system(size: 28, weight: .light))
-                            Text("h").font(.system(size: 13)).foregroundStyle(Theme.textTertiary).padding(.horizontal, 3)
-                            Text(String(format: "%02d", todayMinutes % 60)).font(.system(size: 28, weight: .light))
-                            Text("m").font(.system(size: 13)).foregroundStyle(Theme.textTertiary).padding(.leading, 3)
-                        }
-                        .monospacedDigit()
+        VStack(spacing: 0) {
+            Button {
+                withAnimation(.snappy(duration: 0.26)) { isOpen.toggle() }
+            } label: {
+                HStack(spacing: 10) {
+                    Text(title)
+                        .font(.system(size: 15, weight: .medium))
                         .foregroundStyle(Theme.text)
-
-                        HStack(spacing: 3) {
-                            Image(systemName: isUp ? "arrow.up.right" : "arrow.down.right")
-                                .font(.system(size: 10, weight: .semibold))
-                            Text(deltaText)
-                        }
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.textSecondary)
-                        .padding(.top, 8)
-                    }
-
-                    Spacer(minLength: 12)
-
-                    MiniHeatmap(days: days)
+                    Spacer(minLength: 8)
+                    Text(summary)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.textTertiary)
+                        .lineLimit(1)
+                    Image(systemName: isOpen ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Theme.textTertiary)
+                        .frame(width: 14)
                 }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 17)
+                .contentShape(Rectangle())
             }
-            .contentShape(RoundedRectangle(cornerRadius: Theme.cardCorner, style: .continuous))
+            .buttonStyle(.plain)
+
+            if isOpen {
+                VStack(alignment: .leading, spacing: 0) {
+                    content
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 10)
+            }
         }
-        .buttonStyle(PressableStyle())
-        .cardSurface()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: Theme.cardCorner, style: .continuous)
+                .fill(Theme.surface)
+        )
     }
 }
+
+// MARK: - 问候
+
+enum Greeting {
+    static var text: String {
+        let hour = Calendar.current.component(.hour, from: Date())
+        let name = LocalProfile.displayName
+        let emoji: String
+        let words: String
+        switch hour {
+        case 5..<11:
+            words = "早上好！"; emoji = "🥱"
+        case 11..<14:
+            words = "中午好！"; emoji = "🫪"
+        case 14..<18:
+            words = "下午好！"; emoji = "☕️"
+        default:
+            words = "晚上好！"; emoji = "😪"
+        }
+        return "\(words)\(emoji) \(name)。"
+    }
+}
+
+// MARK: - 时间详情
+
+struct TimeDetailSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            TimeView(showsTitle: false)
+                .background(Theme.bg)
+                .navigationTitle("使用时间")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("完成") { dismiss() }
+                            .foregroundStyle(Theme.text)
+                    }
+                }
+                .tint(Theme.text)
+        }
+        .presentationBackground(Theme.bg)
+    }
+}
+
+// MARK: - 迷你热力图
 
 struct MiniHeatmap: View {
     let days: [UsageDigest.Day]

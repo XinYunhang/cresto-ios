@@ -1,32 +1,62 @@
 import SwiftUI
+import UIKit
 
-/// 黑白极简 + 液态玻璃。
-/// 规则只有一条：**只有纯白是强调色**，其余全是黑、灰、白透明度。
+/// 材质分两层：
+/// · 内容 = 实心磨砂块（无描边，靠明度分层）
+/// · 玻璃 = 只给底栏和顶部圆钮
+/// 颜色全部是动态色，跟着系统/手动主题走，不需要在每个视图里判断深浅。
 enum Theme {
-    // 表面
-    static let bg = Color(hex: 0x000000)
-    static let surface = Color.white.opacity(0.045)
-    static let surfaceRaised = Color(hex: 0x121212)
-    static let stroke = Color.white.opacity(0.09)
-    static let strokeStrong = Color.white.opacity(0.16)
+    static let bg = dynamic(dark: 0x000000, light: 0xFFFFFF)
+    static let surface = dynamic(dark: 0x151517, light: 0xF2F2F5)
+    static let surfaceRaised = dynamic(dark: 0x1D1D20, light: 0xE9E9EE)
 
-    // 文字
-    static let text = Color(hex: 0xFAFAFA)
-    static let textSecondary = Color(hex: 0xA0A0A0)
-    static let textTertiary = Color(hex: 0x5C5C5C)
+    static let text = dynamic(dark: 0xFAFAFA, light: 0x0A0A0A)
+    static let textSecondary = dynamic(dark: 0x9C9CA4, light: 0x6D6D76)
+    static let textTertiary = dynamic(dark: 0x5F5F67, light: 0xA2A2AA)
 
-    // 强调：白
-    static let accent = Color(hex: 0xFAFAFA)
-    static let ink = Color(hex: 0xFAFAFA)
-    static let online = Color(hex: 0xFAFAFA)
+    static let accent = text
+    static let ink = text
+    static let online = text
+    static let mint = textSecondary
 
-    /// 旧名字保留，黑白模式下它就是次级灰
-    static let mint = Color(hex: 0xA0A0A0)
+    /// 只用在列表内部的分隔线，不包边
+    static let stroke = line
+    static let strokeStrong = dynamicLine(dark: 0.10, light: 0.09)
 
-    // 尺寸
-    static let cardCorner: CGFloat = 22
+    static let cardCorner: CGFloat = 20
     static let screenPadding: CGFloat = 18
     static let cardGap: CGFloat = 10
+
+    // MARK: 构造
+
+    private static func dynamic(dark: UInt32, light: UInt32) -> Color {
+        Color(uiColor: UIColor { trait in
+            UIColor(rgb: trait.userInterfaceStyle == .dark ? dark : light)
+        })
+    }
+
+    private static var line: Color {
+        Color(uiColor: UIColor { trait in
+            UIColor(white: trait.userInterfaceStyle == .dark ? 1 : 0, alpha: 0.055)
+        })
+    }
+
+    private static func dynamicLine(dark: Double, light: Double) -> Color {
+        Color(uiColor: UIColor { trait in
+            UIColor(white: trait.userInterfaceStyle == .dark ? 1 : 0, alpha: trait.userInterfaceStyle == .dark ? dark : light)
+        })
+    }
+}
+
+extension UIColor {
+    convenience init(rgb: UInt32, alpha: CGFloat = 1) {
+        self.init(
+            red: CGFloat((rgb >> 16) & 0xFF) / 255,
+            green: CGFloat((rgb >> 8) & 0xFF) / 255,
+            blue: CGFloat(rgb & 0xFF) / 255,
+            alpha: alpha
+        )
+    }
 }
 
 extension Color {
@@ -51,7 +81,6 @@ private struct CardSurface: ViewModifier {
         content
             .padding(padding)
             .background(shape.fill(Theme.surface))
-            .overlay(shape.strokeBorder(Theme.stroke, lineWidth: 1))
     }
 }
 
@@ -67,21 +96,29 @@ extension View {
     }
 }
 
-// MARK: - 液态玻璃
+// MARK: - 玻璃
 
 extension View {
-    /// iOS 26 用系统 Liquid Glass；旧系统退回毛玻璃。
+    /// 底栏/顶部圆钮专用。iOS 26 走系统 Liquid Glass（含触摸时的形变），旧系统退回毛玻璃。
     @ViewBuilder
     func glassCapsule(interactive: Bool = true) -> some View {
         if #available(iOS 26.0, *) {
-            self.glassEffect(
-                interactive ? .regular.interactive() : .regular,
-                in: Capsule()
-            )
+            self.glassEffect(interactive ? .regular.interactive() : .regular, in: Capsule())
         } else {
             self
                 .background(Capsule().fill(.ultraThinMaterial))
-                .overlay(Capsule().strokeBorder(Theme.strokeStrong, lineWidth: 1))
+                .overlay(Capsule().strokeBorder(Color.white.opacity(0.16), lineWidth: 0.5))
+        }
+    }
+
+    @ViewBuilder
+    func glassCircle(interactive: Bool = true) -> some View {
+        if #available(iOS 26.0, *) {
+            self.glassEffect(interactive ? .regular.interactive() : .regular, in: Circle())
+        } else {
+            self
+                .background(Circle().fill(.ultraThinMaterial))
+                .overlay(Circle().strokeBorder(Color.white.opacity(0.16), lineWidth: 0.5))
         }
     }
 }
@@ -91,7 +128,7 @@ extension View {
 struct PressableStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed ? 0.94 : 1)
+            .scaleEffect(configuration.isPressed ? 0.96 : 1)
             .animation(.spring(response: 0.28, dampingFraction: 0.7), value: configuration.isPressed)
     }
 }
@@ -106,23 +143,26 @@ struct AccentChip: View {
         Text(text)
             .font(.system(size: small ? 10 : 11))
             .foregroundStyle(Theme.textSecondary)
-            .padding(.horizontal, small ? 7 : 9)
-            .padding(.vertical, small ? 2 : 3)
-            .background(Capsule().fill(Color.white.opacity(0.03)))
-            .overlay(Capsule().strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
+            .padding(.horizontal, small ? 8 : 10)
+            .padding(.vertical, small ? 3 : 4)
+            .background(Capsule().fill(Theme.surfaceRaised))
     }
 }
 
-// MARK: - 热力色阶（灰阶）
+// MARK: - 热力色阶
 
 enum HeatScale {
     static func color(for level: Int) -> Color {
-        switch level {
-        case 0: return Color.white.opacity(0.06)
-        case 1: return Color.white.opacity(0.19)
-        case 2: return Color.white.opacity(0.34)
-        case 3: return Color.white.opacity(0.58)
-        default: return Color.white.opacity(0.93)
-        }
+        Color(uiColor: UIColor { trait in
+            let isDark = trait.userInterfaceStyle == .dark
+            let white: CGFloat = isDark ? 1 : 0
+            switch level {
+            case 0: return UIColor(white: white, alpha: isDark ? 0.06 : 0.07)
+            case 1: return UIColor(white: white, alpha: isDark ? 0.19 : 0.16)
+            case 2: return UIColor(white: white, alpha: isDark ? 0.36 : 0.32)
+            case 3: return UIColor(white: white, alpha: isDark ? 0.60 : 0.58)
+            default: return UIColor(white: white, alpha: isDark ? 0.95 : 0.88)
+            }
+        })
     }
 }

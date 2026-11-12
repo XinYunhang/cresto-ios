@@ -1,0 +1,468 @@
+<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;padding:0;background:#050505}</style><script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script></head><body><div id="cresto" class="stage viz-dotted-background" data-theme="dark">
+
+  <div class="phone">
+
+    <div class="sb"><span>9:41</span><span class="sb-icons"><i data-lucide="signal"></i><i data-lucide="wifi"></i><i data-lucide="battery-full"></i></span></div>
+
+    <div class="scroll" id="scroll">
+
+      <!-- ================= 概览 ================= -->
+      <section class="screen" data-screen="overview">
+        <div class="toprow end">
+          <button class="round" id="open-settings" aria-label="设置"><i data-lucide="ellipsis"></i></button>
+        </div>
+
+        <h1 class="hello" id="hello">晚上好！<span>秦耀扬</span></h1>
+
+        <div class="search"><i data-lucide="search"></i><span>搜索</span></div>
+
+        <section class="fold open">
+          <button class="fold-hd">
+            <b>今日待办</b>
+            <em>3</em>
+            <i data-lucide="chevron-down"></i>
+          </button>
+          <div class="fold-body">
+            <ul class="tasks">
+              <li class="done"><span class="ck"></span><span class="t">晨间复盘 15 分钟</span><span class="meta">09:30</span></li>
+              <li><span class="ck"></span><span class="t">给 Cresto 写 iOS 首页</span><span class="meta">今天</span></li>
+              <li><span class="ck"></span><span class="t">整理 dsh-go 的远程协议笔记</span><span class="meta">21:00</span></li>
+            </ul>
+            <div class="addrow"><i data-lucide="plus"></i>添加待办</div>
+          </div>
+        </section>
+
+        <section class="fold">
+          <button class="fold-hd">
+            <b>今日运势</b>
+            <em>82 分 · 渐入佳境</em>
+            <i data-lucide="chevron-right"></i>
+          </button>
+        </section>
+
+        <section class="fold">
+          <button class="fold-hd">
+            <b>今日塔罗</b>
+            <em>愚者 · 正位</em>
+            <i data-lucide="chevron-right"></i>
+          </button>
+        </section>
+
+        <section class="fold">
+          <button class="fold-hd">
+            <b>使用时间</b>
+            <em>今天 3h 42m</em>
+            <i data-lucide="chevron-right"></i>
+          </button>
+        </section>
+
+        <div class="footnote">轻点展开 · 内容都在这里</div>
+      </section>
+
+      <!-- ================= 待办（融合时间） ================= -->
+      <section class="screen" data-screen="tasks" hidden>
+        <div class="toprow">
+          <h1 class="page-title">待办</h1>
+          <button class="round" aria-label="新建"><i data-lucide="plus"></i></button>
+        </div>
+
+        <!-- 融合进来的时间卡 -->
+        <section class="card timecard">
+          <div class="ch"><span>本周</span><span class="dim">21h 08m</span></div>
+          <div class="trow">
+            <div class="heat" data-weeks="12"></div>
+            <div class="stat">
+              <b>64%</b>
+              <span>完成率</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="sec">已逾期 <span>1</span></div>
+          <ul class="tasks">
+            <li><span class="ck"></span><span class="t">交实验报告</span><span class="meta">昨天</span></li>
+          </ul>
+          <div class="sec mt">今天 <span>2</span></div>
+          <ul class="tasks">
+            <li><span class="ck"></span><span class="t">给 Cresto 写 iOS 首页</span><span class="meta">今天</span></li>
+            <li><span class="ck"></span><span class="t">整理 dsh-go 的远程协议笔记</span><span class="meta">21:00</span></li>
+          </ul>
+          <div class="sec mt">以后 <span>2</span></div>
+          <ul class="tasks">
+            <li><span class="ck"></span><span class="t">导出 10 月使用热力图</span><span class="meta">11月20日</span></li>
+          </ul>
+        </section>
+      </section>
+
+      <!-- ================= 课表 ================= -->
+      <section class="screen" data-screen="course" hidden>
+        <div class="toprow">
+          <h1 class="page-title">课表</h1>
+          <div class="row-actions">
+            <button class="round" aria-label="导入"><i data-lucide="scan"></i></button>
+            <button class="round" aria-label="添加"><i data-lucide="plus"></i></button>
+          </div>
+        </div>
+
+        <div class="weekbar">
+          <i data-lucide="chevron-left"></i>
+          <div><b>第 11 周</b><span>11月9日</span></div>
+          <i data-lucide="chevron-right"></i>
+        </div>
+
+        <section class="grid-card">
+          <div class="dayhead">
+            <span class="tl"></span>
+            <span class="today">一<em>9</em></span>
+            <span>二<em>10</em></span>
+            <span>三<em>11</em></span>
+            <span>四<em>12</em></span>
+            <span>五<em>13</em></span>
+            <span>六<em>14</em></span>
+            <span class="dim">日<em>15</em></span>
+          </div>
+          <div class="grid">
+            <div class="rows">
+              <div class="r"><span>1</span><b></b><b></b><b></b><b></b><b></b><b></b><b></b></div>
+              <div class="r"><span>2</span><b></b><b></b><b></b><b></b><b></b><b></b><b></b></div>
+              <div class="r"><span>3</span><b></b><b></b><b></b><b></b><b></b><b></b><b></b></div>
+              <div class="r"><span>4</span><b></b><b></b><b></b><b></b><b></b><b></b><b></b></div>
+              <div class="r"><span>5</span><b></b><b></b><b></b><b></b><b></b><b></b><b></b></div>
+              <div class="r"><span>6</span><b></b><b></b><b></b><b></b><b></b><b></b><b></b></div>
+              <div class="r"><span>7</span><b></b><b></b><b></b><b></b><b></b><b></b><b></b></div>
+              <div class="r"><span>8</span><b></b><b></b><b></b><b></b><b></b><b></b><b></b></div>
+              <div class="r"><span>9</span><b></b><b></b><b></b><b></b><b></b><b></b><b></b></div>
+              <div class="r"><span>10</span><b></b><b></b><b></b><b></b><b></b><b></b><b></b></div>
+            </div>
+            <div class="block b0" style="--c:1;--s:1;--e:2">移动应用开发<em>教三 402</em></div>
+            <div class="block b1" style="--c:1;--s:3;--e:4">线性代数<em>教二 108</em></div>
+            <div class="block b2" style="--c:3;--s:1;--e:2">英语视听说<em>文科楼 305</em></div>
+            <div class="block b0" style="--c:3;--s:5;--e:7">交互设计基础</div>
+            <div class="block b3" style="--c:5;--s:3;--e:4">数据结构<em>教一 201</em></div>
+          </div>
+        </section>
+      </section>
+
+      <!-- ================= 塔罗 ================= -->
+      <section class="screen" data-screen="tarot" hidden>
+        <div class="toprow">
+          <h1 class="page-title">塔罗</h1>
+          <button class="round" aria-label="牌库"><i data-lucide="layers"></i></button>
+        </div>
+
+        <div class="tarot-stage">
+          <div class="ghost g2"></div>
+          <div class="ghost g1"></div>
+          <div class="tarot-card">
+            <div class="tc-art">The Fool</div>
+          </div>
+        </div>
+
+        <div class="tarot-meta">
+          <div class="tmtitle big">愚者 <em>The Fool</em></div>
+          <div class="tm-sub">正位 · 大阿尔卡纳 0</div>
+          <div class="chips center"><span>全新开始</span><span>勇气</span><span>不必完美</span></div>
+        </div>
+
+        <section class="card">
+          <div class="ch"><span>牌义</span><span class="dim">正位</span></div>
+          <p class="body">带着还没准备好的一切出发。今天的关键是「先动」，方向可以在路上修正。</p>
+        </section>
+
+        <button class="btn-ghost">重新抽一张</button>
+      </section>
+
+    </div>
+
+    <nav class="tabbar">
+      <div class="pill" id="pill">
+        <button class="tab is-active" data-tab="overview" aria-label="概览"><i data-lucide="layout-grid"></i></button>
+        <button class="tab" data-tab="tasks" aria-label="待办"><i data-lucide="circle-check"></i></button>
+        <button class="tab" data-tab="course" aria-label="课表"><i data-lucide="table"></i></button>
+        <button class="tab" data-tab="tarot" aria-label="塔罗"><i data-lucide="sparkles"></i></button>
+      </div>
+    </nav>
+
+    <div class="sheet-wrap" id="sheet-wrap" hidden>
+      <div class="sheet-backdrop" id="sheet-backdrop"></div>
+      <div class="sheet">
+        <div class="grab"></div>
+        <div class="shd">设置</div>
+
+        <div class="srow">
+          <span>主题</span>
+          <div class="seg">
+            <button class="seg-i is-on" data-theme-btn="dark">深色</button>
+            <button class="seg-i" data-theme-btn="light">浅色</button>
+          </div>
+        </div>
+        <div class="srow"><span>导出日志</span><em>1.2 KB ›</em></div>
+        <div class="srow"><span>清空日志</span><em>›</em></div>
+        <div class="srow"><span>版本</span><em>0.2.0 (2)</em></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<style>
+  #cresto {
+    /* 材质分两层：内容用实心磨砂块，玻璃只留给底栏和顶部圆钮 */
+    --bg:#000000;
+    --surface:#151517;
+    --surface2:#1d1d20;
+    --line:rgba(255,255,255,.055);
+    --ink:#fafafa;
+    --ink2:#9c9ca4;
+    --ink3:#5f5f67;
+    display:flex;justify-content:center;padding:30px 12px 22px;border-radius:20px;
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  #cresto[data-theme="light"] {
+    --bg:#ffffff;
+    --surface:#f2f2f5;
+    --surface2:#e9e9ee;
+    --line:rgba(0,0,0,.05);
+    --ink:#0a0a0a;
+    --ink2:#6d6d76;
+    --ink3:#a2a2aa;
+  }
+  #cresto *{box-sizing:border-box}
+  :where(#cresto) button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+  :where(#cresto) ul{list-style:none;margin:0;padding:0}
+  :where(#cresto) h1{margin:0}
+
+  .phone{position:relative;width:393px;max-width:100%;height:852px;display:flex;flex-direction:column;
+    border-radius:50px;overflow:hidden;color:var(--ink);
+    background:var(--bg);box-shadow:0 40px 90px -30px rgba(0,0,0,.55)}
+  .sb{flex:0 0 46px;display:flex;align-items:center;justify-content:space-between;padding:0 28px 0 32px;font-size:14px;font-weight:500}
+  .sb-icons{display:flex;gap:6px}
+  .sb-icons svg{width:14px;height:14px}
+  .scroll{flex:1;overflow-y:auto;scrollbar-width:none;padding:0 18px 120px}
+  .scroll::-webkit-scrollbar{display:none}
+
+  .toprow{display:flex;align-items:center;justify-content:space-between;padding:2px 2px 14px}
+  .toprow.end{justify-content:flex-end}
+  .row-actions{display:flex;gap:9px}
+  .page-title{font-size:26px;font-weight:500;letter-spacing:-.02em}
+
+  /* 顶部圆钮：允许玻璃 */
+  .round{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;color:var(--ink);
+    background:rgba(255,255,255,.10);
+    -webkit-backdrop-filter:blur(20px) saturate(160%);
+    backdrop-filter:blur(20px) saturate(160%)}
+  #cresto[data-theme="light"] .round{background:rgba(255,255,255,.6);box-shadow:inset 0 1px 0 #fff,0 1px 3px rgba(0,0,0,.06)}
+  .round svg{width:17px;height:17px}
+
+  .hello{font-size:27px;font-weight:500;letter-spacing:-.02em;padding:0 2px 18px;line-height:1.2}
+
+  /* 搜索：实心块 */
+  .search{display:flex;align-items:center;gap:9px;height:44px;padding:0 14px;margin-bottom:14px;
+    border-radius:14px;background:var(--surface);color:var(--ink3);font-size:14px}
+  .search svg{width:16px;height:16px}
+
+  /* 折叠块：实心，无描边 */
+  .fold{margin-bottom:10px;border-radius:20px;background:var(--surface);overflow:hidden}
+  .fold-hd{display:flex;align-items:center;gap:10px;width:100%;padding:17px 16px;text-align:left;color:var(--ink)}
+  .fold-hd b{font-size:15px;font-weight:500}
+  .fold-hd em{margin-left:auto;font-style:normal;font-size:12px;color:var(--ink3)}
+  .fold-hd svg{width:15px;height:15px;color:var(--ink3)}
+  .fold-body{padding:0 16px 4px}
+  .fold:not(.open) .fold-body{display:none}
+
+  .tasks li{display:flex;align-items:center;gap:11px;padding:8px 0}
+  .ck{flex:0 0 19px;width:19px;height:19px;border-radius:50%;border:1.5px solid var(--ink3)}
+  .tasks .done .ck{background:var(--ink);border-color:var(--ink);position:relative}
+  .tasks .done .ck:after{content:"";position:absolute;left:6px;top:3px;width:4px;height:8px;
+    border-right:2px solid var(--bg);border-bottom:2px solid var(--bg);transform:rotate(42deg)}
+  .t{flex:1;font-size:14px}
+  .tasks .done .t{color:var(--ink3);text-decoration:line-through}
+  .meta{font-size:11px;color:var(--ink3)}
+  .addrow{display:flex;align-items:center;gap:8px;margin-top:4px;padding:12px 0 9px;font-size:12.5px;color:var(--ink3)}
+  .addrow svg{width:14px;height:14px}
+
+  .footnote{text-align:center;font-size:11px;color:var(--ink3);padding:20px 0 0}
+
+  .card{display:block;width:100%;text-align:left;border-radius:20px;padding:15px;margin-bottom:10px;
+    background:var(--surface)}
+  .ch{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+  .ch span:first-child{font-size:12px;color:var(--ink2)}
+  .dim{font-size:11.5px;color:var(--ink3)}
+  .sec{display:flex;gap:6px;font-size:11.5px;color:var(--ink3);margin-bottom:2px}
+  .sec.mt{margin-top:16px}
+
+  .timecard{padding:15px 16px}
+  .trow{display:flex;align-items:flex-end;justify-content:space-between;gap:14px}
+  .stat{text-align:right}
+  .stat b{display:block;font-size:22px;font-weight:300;letter-spacing:-.02em}
+  .stat span{font-size:10.5px;color:var(--ink3)}
+
+  .heat{display:grid;grid-auto-flow:column;grid-template-rows:repeat(7,8px);grid-auto-columns:8px;gap:3px}
+  .heat i{display:block;width:8px;height:8px;border-radius:2px;background:var(--ink)}
+  .l0{opacity:.06} .l1{opacity:.19} .l2{opacity:.36} .l3{opacity:.6} .l4{opacity:.95}
+
+  .weekbar{display:flex;align-items:center;gap:10px;padding:9px 12px;margin-bottom:10px;
+    border-radius:20px;background:var(--surface)}
+  .weekbar > div{flex:1;text-align:center;display:flex;flex-direction:column;gap:1px}
+  .weekbar b{font-size:13px;font-weight:500}
+  .weekbar span{font-size:10px;color:var(--ink3)}
+  .weekbar svg{width:14px;height:14px;color:var(--ink2)}
+
+  .grid-card{border-radius:20px;background:var(--surface);padding:9px}
+  .dayhead{display:grid;grid-template-columns:32px repeat(7,1fr);padding-bottom:6px}
+  .dayhead span{display:flex;flex-direction:column;align-items:center;gap:1px;font-size:11px;color:var(--ink2)}
+  .dayhead em{font-style:normal;font-size:9px;color:var(--ink3)}
+  .dayhead .today{color:var(--ink)}
+  .dayhead .dim{color:var(--ink3)}
+  .grid{position:relative;height:386px}
+  .rows{position:absolute;inset:0;display:flex;flex-direction:column}
+  .r{display:grid;grid-template-columns:32px repeat(7,1fr);height:38.6px;border-top:1px solid var(--line)}
+  .r:first-child{border-top:0}
+  .r span{font-size:9px;color:var(--ink3);padding-top:3px}
+  .r b{}
+  .block{position:absolute;border-radius:7px;padding:4px 5px;overflow:hidden;
+    font-size:9.5px;line-height:1.3;color:var(--ink);
+    left:calc(32px + (var(--c) - 1) * (100% - 32px) / 7);
+    width:calc((100% - 32px) / 7 - 2px);
+    top:calc((var(--s) - 1) * 38.6px + 1px);
+    height:calc((var(--e) - var(--s) + 1) * 38.6px - 2px)}
+  .block em{display:block;font-style:normal;font-size:9px;color:var(--ink2);margin-top:2px}
+  .b0{background:rgba(127,127,127,.14)}
+  .b1{background:rgba(127,127,127,.26)}
+  .b2{background:rgba(127,127,127,.08)}
+  .b3{background:rgba(127,127,127,.19)}
+
+  .tarot-stage{position:relative;height:340px;display:flex;align-items:center;justify-content:center;perspective:1400px}
+  .ghost{position:absolute;width:180px;height:270px;border-radius:12px;background:#181c27}
+  .g1{transform:rotate(-5deg) translate(-7px,5px);opacity:.55}
+  .g2{transform:rotate(6deg) translate(8px,8px);opacity:.35}
+  .tarot-card{position:relative;width:180px;height:270px;border-radius:12px;
+    background:linear-gradient(160deg,#f6e8cd,#e2cba6 55%,#c9a97f);
+    box-shadow:0 26px 50px -22px rgba(0,0,0,.5);padding:7px}
+  .tc-art{height:100%;border-radius:7px;display:grid;place-items:center;
+    background:radial-gradient(80% 60% at 50% 30%,#d8563f 0%,#8f3b2c 45%,#3b2a3f 100%);
+    color:#f7ead2;font:600 14px ui-serif,Georgia,serif;letter-spacing:.06em}
+  .tarot-meta{text-align:center;margin:14px 0 16px}
+  .tmtitle{display:flex;align-items:baseline;justify-content:center;gap:6px;font-size:23px;font-weight:500}
+  .tmtitle em{font-style:normal;font-size:13px;color:var(--ink3);font-family:ui-serif,Georgia,serif}
+  .tm-sub{font-size:11.5px;color:var(--ink3);margin-top:6px}
+  .chips{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-top:14px}
+  .chips span{font-size:11px;padding:4px 10px;border-radius:999px;color:var(--ink2);background:var(--surface2)}
+  .body{margin:0;font-size:13px;line-height:1.75;color:var(--ink2)}
+  .btn-ghost{width:100%;height:46px;border-radius:15px;background:var(--surface2);
+    color:var(--ink);font-size:14.5px;font-weight:500}
+
+  /* 底栏：唯一的液态玻璃 */
+  .tabbar{position:absolute;left:16px;right:16px;bottom:22px;display:flex}
+  .pill{flex:1;display:flex;align-items:center;gap:2px;padding:8px;border-radius:999px;
+    background:rgba(26,26,30,.55);
+    -webkit-backdrop-filter:blur(34px) saturate(170%) brightness(1.15);
+    backdrop-filter:blur(34px) saturate(170%) brightness(1.15);
+    box-shadow:0 24px 48px -18px rgba(0,0,0,.7),inset 0 1px 0 rgba(255,255,255,.18),inset 0 -1px 0 rgba(255,255,255,.04)}
+  #cresto[data-theme="light"] .pill{background:rgba(255,255,255,.55);
+    box-shadow:0 20px 40px -18px rgba(0,0,0,.18),inset 0 1px 0 #fff,inset 0 -1px 0 rgba(0,0,0,.03)}
+  .tab{flex:1;display:grid;place-items:center;padding:14px 0;border-radius:999px;color:var(--ink3);
+    transition:background .18s ease,color .18s ease}
+  .tab svg{width:21px;height:21px;stroke-width:1.6;pointer-events:none}
+  .tab.is-active{color:var(--ink);background:rgba(255,255,255,.13)}
+  #cresto[data-theme="light"] .tab.is-active{background:rgba(0,0,0,.06)}
+
+  .sheet-wrap{position:absolute;inset:0;z-index:6;display:flex;flex-direction:column;justify-content:flex-end}
+  .sheet-wrap[hidden]{display:none}
+  .sheet-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.4)}
+  .sheet{position:relative;padding:10px 18px 28px;border-top-left-radius:26px;border-top-right-radius:26px;
+    background:var(--surface)}
+  .grab{width:38px;height:4px;border-radius:99px;background:var(--ink3);opacity:.4;margin:0 auto 15px}
+  .shd{font-size:15px;font-weight:500;margin-bottom:8px}
+  .srow{display:flex;align-items:center;justify-content:space-between;padding:13px 0;
+    border-bottom:1px solid var(--line);font-size:13.5px}
+  .srow:last-child{border-bottom:0}
+  .srow em{font-style:normal;font-size:12.5px;color:var(--ink3)}
+  .seg{display:flex;gap:3px;padding:3px;border-radius:999px;background:var(--surface2)}
+  .seg-i{font-size:12px;padding:5px 12px;border-radius:999px;color:var(--ink2)}
+  .seg-i.is-on{background:var(--bg);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.15)}
+</style>
+
+<script>
+(function () {
+  var root = document.getElementById('cresto');
+  var scroll = document.getElementById('scroll');
+  var sheet = document.getElementById('sheet-wrap');
+  var pill = document.getElementById('pill');
+  var tabs = [].slice.call(root.querySelectorAll('.tab'));
+  var screens = [].slice.call(root.querySelectorAll('.screen'));
+
+  // 热力图
+  root.querySelectorAll('.heat[data-weeks]').forEach(function (el) {
+    var weeks = parseInt(el.getAttribute('data-weeks'), 10) || 12;
+    for (var w = 0; w < weeks; w++) {
+      for (var d = 0; d < 7; d++) {
+        var seed = (w * 7 + d) * 2654435761 % 4294967296;
+        var rnd = ((seed ^ (seed >>> 13)) % 100) / 100;
+        var level = rnd > .86 ? 4 : rnd > .68 ? 3 : rnd > .46 ? 2 : rnd > .22 ? 1 : 0;
+        var i = document.createElement('i');
+        i.className = 'l' + level;
+        el.appendChild(i);
+      }
+    }
+  });
+
+  // 时间问候
+  var hour = new Date().getHours();
+  var greet = hour < 11 ? '早上好！' : hour < 14 ? '中午好！' : hour < 18 ? '下午好！' : '晚上好！';
+  document.getElementById('hello').innerHTML = greet + '<span>秦耀扬</span>。';
+
+  // 切页
+  function activate(name) {
+    tabs.forEach(function (t) { t.classList.toggle('is-active', t.getAttribute('data-tab') === name); });
+    screens.forEach(function (s) { s.hidden = s.getAttribute('data-screen') !== name; });
+    scroll.scrollTop = 0;
+  }
+  tabs.forEach(function (t) {
+    t.addEventListener('click', function () { activate(t.getAttribute('data-tab')); });
+  });
+
+  // 长按拖动切页
+  var dragging = false;
+  function pick(x) {
+    var hit = null;
+    tabs.forEach(function (t) {
+      var r = t.getBoundingClientRect();
+      if (x >= r.left && x <= r.right) hit = t;
+    });
+    if (hit) activate(hit.getAttribute('data-tab'));
+  }
+  pill.addEventListener('pointerdown', function (e) {
+    dragging = true;
+    if (pill.setPointerCapture) pill.setPointerCapture(e.pointerId);
+    pick(e.clientX);
+  });
+  pill.addEventListener('pointermove', function (e) { if (dragging) pick(e.clientX); });
+  pill.addEventListener('pointerup', function () { dragging = false; });
+  pill.addEventListener('pointercancel', function () { dragging = false; });
+
+  // 折叠卡片
+  root.querySelectorAll('.fold-hd').forEach(function (hd) {
+    hd.addEventListener('click', function () {
+      var fold = hd.parentElement;
+      var open = fold.classList.toggle('open');
+      var icon = hd.querySelector('svg');
+      if (icon) icon.setAttribute('data-lucide', open ? 'chevron-down' : 'chevron-right');
+      if (icon && window.lucide) lucide.createIcons();
+    });
+  });
+
+  // 设置
+  document.getElementById('open-settings').addEventListener('click', function () { sheet.hidden = false; });
+  document.getElementById('sheet-backdrop').addEventListener('click', function () { sheet.hidden = true; });
+  root.querySelectorAll('[data-theme-btn]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      root.setAttribute('data-theme', b.getAttribute('data-theme-btn'));
+      root.querySelectorAll('[data-theme-btn]').forEach(function (x) { x.classList.toggle('is-on', x === b); });
+    });
+  });
+})();
+</script>
+<script>if(window.lucide)lucide.createIcons();var h=location.hash.slice(1);if(h){var p=h.split(":");if(p[0]==="light"){document.getElementById("cresto").setAttribute("data-theme","light");}var t=p[p.length-1];var b=document.querySelector("[data-tab=\""+t+"\"]");if(b)b.click();}</script></body></html>

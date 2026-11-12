@@ -1,81 +1,90 @@
 import SwiftUI
+import UIKit
 
-/// 底部：一枚液态玻璃胶囊 + 一枚纯白圆形 FAB。
-/// 白只出现在 FAB 上，胶囊里靠透明度分层。
+/// 底栏：四枚图标，没有文字，也没有 FAB。
+/// 玻璃走 iOS 26 的 Liquid Glass（`.interactive()` 会跟随手指有形变）。
+/// 拖动切页：手指按下后横向滑动，滑到哪个图标就切到哪页。
 struct GlassTabBar: View {
     @Binding var selection: AppTab
-    var onAdd: () -> Void
 
     @Namespace private var selectionNS
+    @State private var pillWidth: CGFloat = 0
+    @State private var isDragging = false
 
-    init(selection: Binding<AppTab>, onAdd: @escaping () -> Void) {
+    private let impact = UIImpactFeedbackGenerator(style: .light)
+
+    init(selection: Binding<AppTab>) {
         self._selection = selection
-        self.onAdd = onAdd
     }
 
     var body: some View {
-        HStack(spacing: 11) {
-            tabPill
-            addButton
-        }
-    }
-
-    // MARK: 胶囊
-
-    private var tabPill: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: 0) {
             ForEach(AppTab.allCases) { tab in
                 tabButton(tab)
             }
         }
         .padding(8)
         .glassCapsule()
-        .shadow(color: .black.opacity(0.9), radius: 28, y: 16)
+        .background(
+            GeometryReader { proxy in
+                Color.clear
+                    .onAppear { pillWidth = proxy.size.width }
+                    .onChange(of: proxy.size.width) { _, newValue in pillWidth = newValue }
+            }
+        )
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { value in
+                    if !isDragging {
+                        isDragging = true
+                        impact.prepare()
+                    }
+                    select(at: value.location.x)
+                }
+                .onEnded { _ in isDragging = false }
+        )
     }
 
     private func tabButton(_ tab: AppTab) -> some View {
         Button {
-            withAnimation(.spring(response: 0.34, dampingFraction: 0.82)) {
-                selection = tab
-            }
+            activate(tab)
         } label: {
             Image(systemName: tab.symbol)
                 .font(.system(size: 21, weight: .regular))
-                .foregroundStyle(selection == tab ? Theme.text : Theme.textSecondary)
+                .foregroundStyle(selection == tab ? Theme.text : Theme.textTertiary)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
-            .background {
-                if selection == tab {
-                    Capsule()
-                        .fill(Color.white.opacity(0.16))
-                        .overlay(
-                            Capsule().strokeBorder(Color.white.opacity(0.16), lineWidth: 1)
-                        )
-                        .matchedGeometryEffect(id: "selection", in: selectionNS)
+                .padding(.vertical, 14)
+                .background {
+                    if selection == tab {
+                        Capsule()
+                            .fill(Theme.text.opacity(0.13))
+                            .matchedGeometryEffect(id: "selection", in: selectionNS)
+                    }
                 }
-            }
-            .contentShape(Capsule())
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(tab.title)
         .accessibilityAddTraits(selection == tab ? .isSelected : [])
     }
 
-    // MARK: FAB
+    // MARK: 手势
 
-    private var addButton: some View {
-        Button(action: onAdd) {
-            Image(systemName: "plus")
-                .font(.system(size: 24, weight: .light))
-                .foregroundStyle(.black)
-                .frame(width: 74, height: 74)
-                .background(Circle().fill(Theme.ink))
-                .overlay(Circle().strokeBorder(Color.white, lineWidth: 1))
-                .shadow(color: .black.opacity(0.9), radius: 24, y: 14)
-                .shadow(color: .white.opacity(0.10), radius: 26)
-                .contentShape(Circle())
+    private func select(at x: CGFloat) {
+        guard pillWidth > 0 else { return }
+        let count = CGFloat(AppTab.allCases.count)
+        let inset: CGFloat = 8
+        let step = (pillWidth - inset * 2) / count
+        let index = Int(((x - inset) / step).rounded(.down))
+        let clamped = min(max(index, 0), Int(count) - 1)
+        activate(AppTab.allCases[clamped])
+    }
+
+    private func activate(_ tab: AppTab) {
+        guard tab != selection else { return }
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+            selection = tab
         }
-        .buttonStyle(PressableStyle())
-        .accessibilityLabel("新建待办")
+        impact.impactOccurred()
     }
 }

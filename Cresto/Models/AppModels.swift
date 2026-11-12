@@ -29,7 +29,7 @@ struct UsageDay: Identifiable {
 // MARK: - 底栏
 
 enum AppTab: String, CaseIterable, Identifiable {
-    case overview, tasks, course, tarot, time
+    case overview, tasks, course, tarot
 
     var id: String { rawValue }
 
@@ -39,7 +39,6 @@ enum AppTab: String, CaseIterable, Identifiable {
         case .tasks: return "待办"
         case .course: return "课表"
         case .tarot: return "塔罗"
-        case .time: return "时间"
         }
     }
 
@@ -49,7 +48,6 @@ enum AppTab: String, CaseIterable, Identifiable {
         case .tasks: return "checkmark.circle"
         case .course: return "tablecells"
         case .tarot: return "sparkles"
-        case .time: return "calendar"
         }
     }
 }

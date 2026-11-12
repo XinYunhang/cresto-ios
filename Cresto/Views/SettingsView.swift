@@ -8,6 +8,8 @@ struct SettingsView: View {
     @Query private var courses: [Course]
     @Query private var usages: [DailyUsage]
 
+    @AppStorage("appTheme") private var appTheme = "system"
+
     @State private var sizeText = "—"
 
     private var versionText: String {
@@ -20,6 +22,7 @@ struct SettingsView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: Theme.cardGap) {
+                    themeCard
                     dataCard
                     logCard
                     aboutCard
@@ -43,6 +46,40 @@ struct SettingsView: View {
             AppLog.info("打开设置页")
             sizeText = AppLog.fileSizeText
         }
+    }
+
+    // MARK: 主题
+
+    private var themeCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("外观").cardLabel()
+            HStack(spacing: 6) {
+                themeButton("跟随系统", value: "system")
+                themeButton("深色", value: "dark")
+                themeButton("浅色", value: "light")
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .cardSurface()
+    }
+
+    private func themeButton(_ title: String, value: String) -> some View {
+        let isOn = appTheme == value
+        return Button {
+            appTheme = value
+            AppLog.info("切换主题：\(value)")
+        } label: {
+            Text(title)
+                .font(.system(size: 12.5))
+                .foregroundStyle(isOn ? Theme.bg : Theme.textSecondary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(isOn ? Theme.text : Theme.surfaceRaised)
+                )
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: 数据

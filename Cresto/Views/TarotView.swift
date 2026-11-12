@@ -197,8 +197,8 @@ struct DeckView: View {
     let isShuffling: Bool
     let isDealt: Bool
 
-    private let cardWidth: CGFloat = 186
-    private let cardHeight: CGFloat = 272
+    private let cardWidth: CGFloat = 180
+    private let cardHeight: CGFloat = 270
 
     var body: some View {
         ZStack {
@@ -374,7 +374,7 @@ struct CardArt: View {
             if let image = Self.load(name) {
                 Image(uiImage: image)
                     .resizable()
-                    .scaledToFill()
+                    .scaledToFit()
             } else {
                 ZStack {
                     Color.white.opacity(0.06)

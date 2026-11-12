@@ -5,6 +5,8 @@ struct RootView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.scenePhase) private var scenePhase
 
+    @AppStorage("appTheme") private var appTheme = "system"
+
     @State private var tab: AppTab = .overview
     @State private var isQuickAddPresented = false
     @State private var isCourseEditorPresented = false
@@ -21,30 +23,14 @@ struct RootView: View {
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            // 底栏下方不垫不透明渐隐：让卡片的边角从玻璃底下滚过去，玻璃才有折射
-            LinearGradient(
-                stops: [
-                    .init(color: Theme.bg.opacity(0), location: 0),
-                    .init(color: Theme.bg.opacity(0.55), location: 0.6),
-                    .init(color: Theme.bg.opacity(0.9), location: 1)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .frame(height: 96)
-            .allowsHitTesting(false)
-
-            GlassTabBar(selection: $tab, onAdd: handleAdd)
+            GlassTabBar(selection: $tab)
                 .padding(.horizontal, 16)
                 .padding(.bottom, 6)
         }
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(colorScheme)
         .onAppear {
             if activeSince == nil { activeSince = Date() }
-            AppLog.info("App 启动")
-        }
-        .onChange(of: tab) { _, newValue in
-            AppLog.info("切换到 \(newValue.title)")
+            AppLog.info("App 启动 · 主题 \(appTheme)")
         }
         .task {
             if todayDraw == nil {
@@ -73,9 +59,16 @@ struct RootView: View {
         }
     }
 
+    private var colorScheme: ColorScheme? {
+        switch appTheme {
+        case "dark": return .dark
+        case "light": return .light
+        default: return nil
+        }
+    }
+
     // MARK: 使用时长
 
-    /// 把从上次记录到现在的前台时间累加进今天
     private func accrueUsage() {
         guard let start = activeSince else {
             activeSince = Date()
@@ -97,15 +90,6 @@ struct RootView: View {
         activeSince = nil
     }
 
-    /// FAB 是上下文相关的：课表页加课程，其他页加速记
-    private func handleAdd() {
-        if tab == .course {
-            isCourseEditorPresented = true
-        } else {
-            isQuickAddPresented = true
-        }
-    }
-
     @ViewBuilder
     private var content: some View {
         switch tab {
@@ -113,18 +97,16 @@ struct RootView: View {
             OverviewView(
                 draw: todayDraw,
                 onOpenTarot: { tab = .tarot },
-                onOpenTime: { tab = .time },
                 onOpenTasks: { tab = .tasks },
+                onAddTask: { isQuickAddPresented = true },
                 onOpenSettings: { isSettingsPresented = true }
             )
         case .tasks:
-            TasksView()
+            TasksView(onAdd: { isQuickAddPresented = true })
         case .course:
             TimetableView()
         case .tarot:
             TarotView(draw: todayDraw)
-        case .time:
-            TimeView()
         }
     }
 }

@@ -16,7 +16,12 @@ struct TasksView: View {
     )
     private var doneTasks: [TaskItem]
 
+    @Query(sort: \DailyUsage.dateKey) private var usages: [DailyUsage]
+
+    var onAdd: () -> Void = {}
+
     @State private var editing: TaskItem?
+    @State private var isTimePresented = false
     @State private var isEditorPresented = false
     @State private var showCompleted = false
 
@@ -28,6 +33,7 @@ struct TasksView: View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(spacing: Theme.cardGap) {
                 header
+                timeSummary
 
                 if openTasks.isEmpty {
                     emptyState
@@ -51,6 +57,51 @@ struct TasksView: View {
 
     // MARK: 页头
 
+    private var timeSummary: some View {
+        let digest = UsageDigest.build(
+            dates: UsageDigest.heatDates(weeks: 12),
+            usages: usages,
+            tasks: openTasks + doneTasks
+        )
+        let minutes = digest.today?.minutes ?? 0
+        let due = digest.lastSeven.reduce(0) { $0 + $1.due }
+        let done = digest.lastSeven.reduce(0) { $0 + $1.done }
+        let rate = due > 0 ? "\(Int(Double(done) / Double(due) * 100))%" : "—"
+
+        return Button {
+            isTimePresented = true
+        } label: {
+            HStack(alignment: .center, spacing: 14) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("本周").font(.system(size: 12)).foregroundStyle(Theme.textSecondary)
+                    HStack(alignment: .lastTextBaseline, spacing: 0) {
+                        Text("\(minutes / 60)").font(.system(size: 26, weight: .light))
+                        Text("h").font(.system(size: 12)).foregroundStyle(Theme.textTertiary).padding(.horizontal, 3)
+                        Text(String(format: "%02d", minutes % 60)).font(.system(size: 26, weight: .light))
+                        Text("m").font(.system(size: 12)).foregroundStyle(Theme.textTertiary).padding(.leading, 3)
+                    }
+                    .monospacedDigit()
+                    .foregroundStyle(Theme.text)
+                }
+
+                Spacer(minLength: 8)
+
+                VStack(alignment: .trailing, spacing: 4) {
+                    Text(rate).font(.system(size: 20, weight: .light)).monospacedDigit()
+                    Text("完成率").font(.system(size: 10.5)).foregroundStyle(Theme.textTertiary)
+                }
+
+                MiniHeatmap(days: Array(digest.days.suffix(21)))
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .cardSurface()
+        .sheet(isPresented: $isTimePresented) {
+            TimeDetailSheet()
+        }
+    }
+
     private var header: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 5) {
@@ -63,10 +114,7 @@ struct TasksView: View {
                     .tracking(-0.5)
             }
             Spacer()
-            Button {
-                editing = nil
-                isEditorPresented = true
-            } label: {
+            Button(action: onAdd) {
                 Image(systemName: "plus")
                     .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(Theme.text)

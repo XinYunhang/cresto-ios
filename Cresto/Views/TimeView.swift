@@ -5,6 +5,12 @@ struct TimeView: View {
     @Query(sort: \DailyUsage.dateKey) private var usages: [DailyUsage]
     @Query(sort: \TaskItem.createdAt) private var tasks: [TaskItem]
 
+    var showsTitle = true
+
+    init(showsTitle: Bool = true) {
+        self.showsTitle = showsTitle
+    }
+
     private let heatWeeks = 17
 
     var body: some View {
@@ -17,7 +23,7 @@ struct TimeView: View {
 
         return ScrollView(.vertical, showsIndicators: false) {
             VStack(spacing: Theme.cardGap) {
-                header
+                if showsTitle { header }
                 summary(digest)
                 heatmapCard(digest)
                 statsCard(digest)

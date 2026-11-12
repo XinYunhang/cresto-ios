@@ -25,9 +25,10 @@ jobs:
       - name: Write local profile
         env:
           BIRTHDAY_SECRET: ${{ secrets.BIRTHDAY }}
+          NAME_SECRET: ${{ secrets.NAME }}
         run: |
           if [ -n "${BIRTHDAY_SECRET:-}" ]; then
-            bash scripts/make_profile.sh "$BIRTHDAY_SECRET"
+            bash scripts/make_profile.sh "$BIRTHDAY_SECRET" "${NAME_SECRET:-}"
           else
             echo "no BIRTHDAY secret, falling back to neutral birthday"
           fi
