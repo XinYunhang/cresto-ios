@@ -76,7 +76,40 @@ struct TimetableSettingsView: View {
         return max(1, days / 7 + 1)
     }
 
-undefined
+    private var reimportCard: some View {
+        Button {
+            confirmReimport = true
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "arrow.clockwise").font(.system(size: 13))
+                Text("重新导入打包课表")
+                Spacer()
+                Text("替换全部课程").font(.system(size: 11.5)).foregroundStyle(Theme.textTertiary)
+            }
+            .font(.system(size: 13.5))
+            .foregroundStyle(Theme.textSecondary)
+            .padding(.horizontal, 15)
+            .padding(.vertical, 14)
+            .background(
+                RoundedRectangle(cornerRadius: Theme.cardCorner, style: .continuous)
+                    .fill(Theme.surface)
+            )
+        }
+        .buttonStyle(.plain)
+        .confirmationDialog(
+            "用打包课表替换全部课程？",
+            isPresented: $confirmReimport,
+            titleVisibility: .visible
+        ) {
+            Button("替换", role: .destructive) {
+                CourseImporter.reimport(into: context)
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("手动添加的课程会一并删除。")
+        }
+    }
+    private func load() {
         guard !loaded, let settings = settingsList.first else { return }
         termStart = settings.termStart
         periodCount = settings.periodCount
