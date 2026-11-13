@@ -50,7 +50,10 @@ struct RootView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .dataRestored)) { _ in
             todayDraw = TarotService.ensureToday(in: context)
-            AppLog.info("数据已恢复，刷新当日塔罗")
+            // 恢复后旧的提醒都失效了，按新数据重排一遍
+            let tasks = (try? context.fetch(FetchDescriptor<TaskItem>())) ?? []
+            NotificationScheduler.syncAll(tasks)
+            AppLog.info("数据已恢复：刷新塔罗 + 重排 (tasks.count) 条提醒")
         }
         .sheet(isPresented: $isQuickAddPresented) {
             QuickAddSheet()
