@@ -36,15 +36,18 @@ final class CourseSlot {
     var weekEnd: Int = 20
     /// all / odd / even
     var parityRaw: String = "all"
+    /// 单双周可能在不同教室，所以地点挂在时间块上
+    var location: String = ""
     var course: Course?
 
-    init(weekday: Int = 1, startPeriod: Int = 1, endPeriod: Int = 2, weekStart: Int = 1, weekEnd: Int = 20, parity: WeekParity = .all) {
+    init(weekday: Int = 1, startPeriod: Int = 1, endPeriod: Int = 2, weekStart: Int = 1, weekEnd: Int = 20, parity: WeekParity = .all, location: String = "") {
         self.weekday = weekday
         self.startPeriod = startPeriod
         self.endPeriod = endPeriod
         self.weekStart = weekStart
         self.weekEnd = weekEnd
         self.parityRaw = parity.rawValue
+        self.location = location
     }
 
     var parity: WeekParity {

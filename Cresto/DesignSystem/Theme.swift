@@ -166,3 +166,48 @@ enum HeatScale {
         })
     }
 }
+
+// MARK: - 课程配色
+
+struct CourseTone {
+    let bg: Color
+    let fg: Color
+}
+
+extension Theme {
+    /// 九套低饱和配色，深浅主题各一版。按课程稳定分配。
+    private static let lightTones: [(UInt32, UInt32)] = [
+        (0xE6E7C8, 0x62663A),
+        (0xF7E3C6, 0x7C5A2B),
+        (0xDCEBDB, 0x4C6A49),
+        (0xE3D9F3, 0x5A4880),
+        (0xF8E7E1, 0x8A5A50),
+        (0xD9E3F0, 0x3F5776),
+        (0xD5E6E7, 0x3B5C60),
+        (0xEBDFEA, 0x6A4F68),
+        (0xF1E9D9, 0x6B5C45)
+    ]
+
+    private static let darkTones: [(UInt32, UInt32)] = [
+        (0x4A4B33, 0xE6E7C8),
+        (0x5A4A30, 0xF7E3C6),
+        (0x3F4A3E, 0xDCEBDB),
+        (0x4A4058, 0xE3D9F3),
+        (0x5A4340, 0xF8E7E1),
+        (0x3E4756, 0xD9E3F0),
+        (0x3A4A4B, 0xD5E6E7),
+        (0x4E4050, 0xEBDFEA),
+        (0x4A463A, 0xF1E9D9)
+    ]
+
+    static func courseTone(_ index: Int) -> CourseTone {
+        let i = abs(index) % lightTones.count
+        let bg = Color(uiColor: UIColor { trait in
+            UIColor(rgb: trait.userInterfaceStyle == .dark ? darkTones[i].0 : lightTones[i].0)
+        })
+        let fg = Color(uiColor: UIColor { trait in
+            UIColor(rgb: trait.userInterfaceStyle == .dark ? darkTones[i].1 : lightTones[i].1)
+        })
+        return CourseTone(bg: bg, fg: fg)
+    }
+}

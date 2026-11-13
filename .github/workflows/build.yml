@@ -37,6 +37,17 @@ jobs:
             echo "no BIRTHDAY secret, falling back to neutral birthday"
           fi
 
+      - name: Write course data
+        env:
+          COURSES_JSON_B64: ${{ secrets.COURSES_JSON }}
+        run: |
+          if [ -n "${COURSES_JSON_B64:-}" ]; then
+            echo "$COURSES_JSON_B64" | base64 --decode > Cresto/Resources/courses.json
+            echo "courses.json written"
+          else
+            echo "no COURSES_JSON secret, timetable will start empty"
+          fi
+
       - name: Generate Xcode project
         run: xcodegen generate
 

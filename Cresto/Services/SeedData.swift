@@ -6,7 +6,6 @@ import SwiftData
 enum SeedData {
     static func seedIfNeeded(_ context: ModelContext) {
         let taskCount = (try? context.fetchCount(FetchDescriptor<TaskItem>())) ?? 0
-        let courseCount = (try? context.fetchCount(FetchDescriptor<Course>())) ?? 0
         let settingsCount = (try? context.fetchCount(FetchDescriptor<TimetableSettings>())) ?? 0
 
         if settingsCount == 0 {
@@ -59,20 +58,7 @@ enum SeedData {
             [morning, main, night, tomorrow].forEach { context.insert($0) }
         }
 
-        if courseCount == 0 {
-            let swift = Course(name: "移动应用开发", teacher: "陈老师", location: "教三 402", shade: 0)
-            let design = Course(name: "交互设计基础", teacher: "李老师", location: "艺术楼 201", shade: 2)
-            let math = Course(name: "线性代数", teacher: "王老师", location: "教二 108", shade: 4)
-
-            swift.slots = [
-                CourseSlot(weekday: 1, startPeriod: 1, endPeriod: 2),
-                CourseSlot(weekday: 3, startPeriod: 3, endPeriod: 4)
-            ]
-            design.slots = [CourseSlot(weekday: 2, startPeriod: 5, endPeriod: 7, parity: .odd)]
-            math.slots = [CourseSlot(weekday: 4, startPeriod: 1, endPeriod: 2)]
-
-            [swift, design, math].forEach { context.insert($0) }
-        }
+        CourseImporter.importIfNeeded(into: context)
 
         try? context.save()
     }
