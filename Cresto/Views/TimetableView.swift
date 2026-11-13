@@ -400,14 +400,19 @@ struct TimetableView: View {
     // MARK: 数据
 
     private var activeSlots: [SlotItem] {
-        courses
-            .flatMap { course in course.slots.map { SlotItem(course: course, slot: $0) } }
-            .filter { $0.1.isActive(inWeek: currentWeek) }
-            .sorted { lhs, rhs in
-                lhs.1.weekday == rhs.1.weekday
-                    ? lhs.1.startPeriod < rhs.1.startPeriod
-                    : lhs.1.weekday < rhs.1.weekday
+        var items: [SlotItem] = []
+        for course in courses {
+            for slot in course.slots where slot.isActive(inWeek: currentWeek) {
+                items.append(SlotItem(course: course, slot: slot))
             }
+        }
+        items.sort { lhs, rhs in
+            if lhs.slot.weekday == rhs.slot.weekday {
+                return lhs.slot.startPeriod < rhs.slot.startPeriod
+            }
+            return lhs.slot.weekday < rhs.slot.weekday
+        }
+        return items
     }
 
     private func slots(on weekday: Int) -> [SlotItem] {
