@@ -11,6 +11,7 @@ struct TimetableSettingsView: View {
     @State private var termStart = Date()
     @State private var periodCount = 12
     @State private var loaded = false
+    @State private var confirmReimport = false
 
     var body: some View {
         NavigationStack {
@@ -43,6 +44,8 @@ struct TimetableSettingsView: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .cardSurface()
+
+                    reimportCard
                 }
                 .padding(.horizontal, Theme.screenPadding)
                 .padding(.vertical, 12)
@@ -73,7 +76,7 @@ struct TimetableSettingsView: View {
         return max(1, days / 7 + 1)
     }
 
-    private func load() {
+undefined
         guard !loaded, let settings = settingsList.first else { return }
         termStart = settings.termStart
         periodCount = settings.periodCount
