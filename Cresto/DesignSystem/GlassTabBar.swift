@@ -1,116 +1,68 @@
 import SwiftUI
 import UIKit
 
-/// 底栏：四枚图标，无文字、无 FAB。
+/// 底栏：直接用系统的 `UISegmentedControl` 承载。
 ///
-/// 玻璃分两层：整条胶囊是系统液态玻璃（`.interactive()` 跟随触摸提亮），
-/// 选中态是一块**独立滑块**，拖动时连续跟手并横向拉伸，松手弹簧吸附。
-/// 没有把滑块做成第二层玻璃——iOS 26 不支持玻璃套玻璃，会糊成一片。
+/// 为什么不再自己画：
+/// iOS 26 的液态玻璃镜片是系统组件内部实现的——按下变亮、拖动跟手、吸附、震动都在里面。
+/// 自己用 SwiftUI 拼，只能做到「一块色块在动」，做不到镜片的材质变化，
+/// 而且玻璃不能嵌套玻璃（会糊）。所以把形状和动画交给系统，我们只提供四个图标。
 struct GlassTabBar: View {
     @Binding var selection: AppTab
 
-    @State private var barWidth: CGFloat = 0
-    /// 拖动时滑块的连续位置（0...count-1）；nil 表示停在选中项
-    @State private var dragFraction: CGFloat?
-    @State private var isDragging = false
-
-    private let inset: CGFloat = 8
-    private let barHeight: CGFloat = 64
-    private let lensHeight: CGFloat = 48
-    private let impact = UIImpactFeedbackGenerator(style: .light)
-
     var body: some View {
-        let count = CGFloat(AppTab.allCases.count)
-        let segment = barWidth > 0 ? (barWidth - inset * 2) / count : 0
-        let selectedIndex = CGFloat(AppTab.allCases.firstIndex(of: selection) ?? 0)
-        let restingX = inset + selectedIndex * segment
-        let lensX = dragFraction.map { inset + $0 * segment } ?? restingX
-        let stretch: CGFloat = isDragging ? 4 : 0
+        SegmentedTabBar(selection: $selection)
+            .frame(height: 52)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 6)
+    }
+}
 
-        ZStack(alignment: .leading) {
-            // 整条玻璃
-            Color.clear
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .glassCapsule()
+// MARK: - UIKit 桥
 
-            // 选中滑块
-            if segment > 0 {
-                Capsule(style: .continuous)
-                    .fill(Theme.text.opacity(0.14))
-                    .overlay(
-                        Capsule(style: .continuous)
-                            .fill(
-                                LinearGradient(
-                                    colors: [Color.white.opacity(0.10), Color.white.opacity(0.02)],
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                )
-                            )
-                    )
-                    .frame(width: max(0, segment - 4 + stretch * 2), height: lensHeight)
-                    .offset(x: lensX - 2 - stretch, y: (barHeight - lensHeight) / 2)
-            }
+private struct SegmentedTabBar: UIViewRepresentable {
+    @Binding var selection: AppTab
 
-            HStack(spacing: 0) {
-                ForEach(AppTab.allCases) { tab in
-                    tabButton(tab)
-                }
-            }
-            .padding(inset)
-        }
-        .frame(height: barHeight)
-        .background(
-            GeometryReader { proxy in
-                Color.clear
-                    .onAppear { barWidth = proxy.size.width }
-                    .onChange(of: proxy.size.width) { _, newValue in barWidth = newValue }
-            }
-        )
-        .contentShape(Capsule())
-        .gesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { value in
-                    guard segment > 0 else { return }
-                    if !isDragging {
-                        isDragging = true
-                        impact.prepare()
-                    }
-                    let raw = (value.location.x - inset) / segment
-                    let fraction = min(max(raw, 0), count - 1)
-                    dragFraction = fraction
-
-                    let nearest = Int(fraction.rounded())
-                    let tab = AppTab.allCases[nearest]
-                    if tab != selection {
-                        selection = tab
-                        impact.impactOccurred()
-                    }
-                }
-                .onEnded { _ in
-                    isDragging = false
-                    withAnimation(.spring(response: 0.34, dampingFraction: 0.78)) {
-                        dragFraction = nil
-                    }
-                }
-        )
+    func makeCoordinator() -> Coordinator {
+        Coordinator(selection: $selection)
     }
 
-    private func tabButton(_ tab: AppTab) -> some View {
-        Button {
-            guard tab != selection else { return }
-            withAnimation(.spring(response: 0.34, dampingFraction: 0.82)) {
-                selection = tab
-            }
-            impact.impactOccurred()
-        } label: {
-            Image(systemName: tab.symbol)
-                .font(.system(size: 21, weight: .regular))
-                .foregroundStyle(selection == tab ? Theme.text : Theme.textTertiary)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .contentShape(Rectangle())
+    func makeUIView(context: Context) -> UISegmentedControl {
+        let images = AppTab.allCases.map { tab in
+            UIImage(
+                systemName: tab.symbol,
+                withConfiguration: UIImage.SymbolConfiguration(pointSize: 19, weight: .regular)
+            )
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(tab.title)
-        .accessibilityAddTraits(selection == tab ? .isSelected : [])
+        let control = UISegmentedControl(items: images)
+        control.apportionsSegmentWidthsByContent = false
+        control.selectedSegmentIndex = AppTab.allCases.firstIndex(of: selection) ?? 0
+        control.addTarget(context.coordinator, action: #selector(Coordinator.valueChanged(_:)), for: .valueChanged)
+        control.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        control.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        control.accessibilityLabel = "主导航"
+        return control
+    }
+
+    func updateUIView(_ control: UISegmentedControl, context: Context) {
+        let index = AppTab.allCases.firstIndex(of: selection) ?? 0
+        if control.selectedSegmentIndex != index {
+            control.selectedSegmentIndex = index
+        }
+    }
+
+    final class Coordinator: NSObject {
+        private let selection: Binding<AppTab>
+
+        init(selection: Binding<AppTab>) {
+            self.selection = selection
+        }
+
+        @objc func valueChanged(_ sender: UISegmentedControl) {
+            let cases = AppTab.allCases
+            let index = sender.selectedSegmentIndex
+            guard index >= 0, index < cases.count else { return }
+            selection.wrappedValue = cases[index]
+        }
     }
 }
