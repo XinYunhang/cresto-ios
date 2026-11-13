@@ -21,6 +21,7 @@ struct CrestoApp: App {
         }
 
         SeedData.seedIfNeeded(container.mainContext)
+        BackupService.makeDailySnapshotIfNeeded(in: container.mainContext)
         NotificationScheduler.requestAuthorization()
     }
 

@@ -11,6 +11,7 @@ struct SettingsView: View {
     @AppStorage("appTheme") private var appTheme = "system"
 
     @State private var sizeText = "—"
+    @State private var isBackupPresented = false
 
     private var versionText: String {
         let short = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.1.0"
@@ -24,6 +25,7 @@ struct SettingsView: View {
                 VStack(spacing: Theme.cardGap) {
                     themeCard
                     dataCard
+                    backupCard
                     logCard
                     aboutCard
                 }
@@ -42,6 +44,9 @@ struct SettingsView: View {
             .tint(Theme.ink)
         }
         .presentationBackground(Theme.bg)
+        .sheet(isPresented: $isBackupPresented) {
+            BackupView()
+        }
         .onAppear {
             AppLog.info("打开设置页")
             sizeText = AppLog.fileSizeText
@@ -93,6 +98,32 @@ struct SettingsView: View {
             row("使用记录", "\(usages.count) 天")
         }
         .cardSurface(padding: 0)
+    }
+
+    // MARK: 备份
+
+    private var backupCard: some View {
+        Button {
+            isBackupPresented = true
+        } label: {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("备份与回退")
+                        .font(.system(size: 13.5))
+                        .foregroundStyle(Theme.text)
+                    Text("每天自动存一份，可随时恢复")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(Theme.textTertiary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Theme.textTertiary)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .cardSurface()
     }
 
     // MARK: 日志

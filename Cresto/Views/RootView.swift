@@ -48,6 +48,10 @@ struct RootView: View {
             guard scenePhase == .active else { return }
             accrueUsage()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .dataRestored)) { _ in
+            todayDraw = TarotService.ensureToday(in: context)
+            AppLog.info("数据已恢复，刷新当日塔罗")
+        }
         .sheet(isPresented: $isQuickAddPresented) {
             QuickAddSheet()
         }
