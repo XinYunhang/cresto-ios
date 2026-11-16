@@ -170,6 +170,8 @@ final class DailyTarot {
     var dateKey: String = ""
     var cardID: Int = 0
     var isReversed: Bool = false
+    /// 今天这张牌是否已经拆过包（拆过就直接进揭晓态）
+    var isOpened: Bool = false
     var drawnAt: Date = Date()
 
     init(dateKey: String, cardID: Int, isReversed: Bool) {
@@ -218,6 +220,7 @@ enum TarotService {
         }
         draw.cardID = next
         draw.isReversed = Bool.random()
+        draw.isOpened = false
         draw.drawnAt = Date()
         try? context.save()
         AppLog.info("重新抽牌：\(draw.card.name) \(draw.isReversed ? "逆位" : "正位")")

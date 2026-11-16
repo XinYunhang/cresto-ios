@@ -11,5 +11,6 @@ build/
 Cresto/Resources/Cards/*.webp
 Cresto/Resources/profile.plist
 Cresto/Resources/courses.json
+Cresto/Resources/Tarot/*.png
 
 _gh_login.log

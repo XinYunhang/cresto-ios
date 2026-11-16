@@ -2,71 +2,54 @@ import SwiftUI
 import SwiftData
 import UIKit
 
+/// 每日一抽：封口袋 → 拖动撕开 → 五张牌扇形飞出 → 揭晓今日主牌。
+/// 卡包/牌背/撕条用真实素材（透明 PNG），全息层用渐变叠加做流动感。
 struct TarotView: View {
     @Environment(\.modelContext) private var context
+    @Query(sort: \DailyTarot.drawnAt, order: .reverse) private var history: [DailyTarot]
 
-    /// 今天的记录，由 RootView 保证已创建
-    let draw: DailyTarot?
+    @State private var draw: DailyTarot?
+    @State private var phase: Phase = .sealed
+    @State private var tear: CGFloat = 0
+    @State private var isFlipped = false
+    @State private var confettiToken = 0
+    @State private var isDetailPresented = false
+    @State private var didLoad = false
 
-    @State private var isFlipped = true
-    @State private var isShuffling = false
-    @State private var isDealt = false
-    @State private var isMetaVisible = true
-    @State private var isBusy = false
-    @State private var showingDeck = false
-
-    init(draw: DailyTarot?) {
-        self.draw = draw
-    }
+    enum Phase { case sealed, revealed }
 
     private var card: TarotCard { draw?.card ?? TarotDeck.major[0] }
-    private var reversed: Bool { draw?.isReversed ?? false }
+    private var isReversed: Bool { draw?.isReversed ?? false }
+
+    private let packWidth: CGFloat = 236
+    private let packHeight: CGFloat = 386
+    /// 撕口位置（占卡包高度的比例），与素材里的撕裂线一致
+    private let tearRatio: CGFloat = 0.358
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
-            VStack(spacing: Theme.cardGap) {
+            VStack(spacing: 0) {
                 header
 
-                DeckView(
-                    card: card,
-                    isFlipped: isFlipped,
-                    isShuffling: isShuffling,
-                    isDealt: isDealt
-                )
-                .onTapGesture { redraw() }
-                .padding(.top, 12)
-                .padding(.bottom, 10)
-
-                metaBlock
-                    .opacity(isMetaVisible ? 1 : 0)
-                    .offset(y: isMetaVisible ? 0 : 6)
-
-                readingCard
-
-                Button(action: redraw) {
-                    Text("重新抽一张")
-                        .font(.system(size: 14.5, weight: .medium))
-                        .foregroundStyle(Theme.text)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 46)
-                        .background(
-                            RoundedRectangle(cornerRadius: 15, style: .continuous)
-                                .fill(Color.white.opacity(0.05))
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 15, style: .continuous)
-                                .strokeBorder(Color.white.opacity(0.22), lineWidth: 1)
-                        )
+                if phase == .sealed {
+                    sealedView
+                        .transition(.opacity)
+                } else {
+                    revealedView
+                        .transition(.opacity)
                 }
-                .buttonStyle(PressableStyle())
-                .disabled(isBusy)
             }
             .padding(.horizontal, Theme.screenPadding)
-            .padding(.bottom, 132)
+            .padding(.bottom, 128)
         }
-        .sheet(isPresented: $showingDeck) {
-            TarotDeckSheet()
+        .overlay {
+            ConfettiOverlay(token: confettiToken)
+                .allowsHitTesting(false)
         }
+        .sheet(isPresented: $isDetailPresented) {
+            TarotReadingSheet(card: card, isReversed: isReversed)
+        }
+        .onAppear(perform: load)
     }
 
     // MARK: 页头
@@ -84,282 +67,427 @@ struct TarotView: View {
             }
             Spacer()
             Button {
-                showingDeck = true
+                isDetailPresented = true
             } label: {
                 Image(systemName: "square.stack.3d.up")
                     .font(.system(size: 16))
                     .foregroundStyle(Theme.text)
-                    .frame(width: 36, height: 36)
-                    .background(Circle().fill(Color.white.opacity(0.05)))
-                    .overlay(Circle().strokeBorder(Theme.stroke, lineWidth: 1))
+                    .frame(width: 38, height: 38)
+                    .glassCircle()
             }
             .buttonStyle(PressableStyle())
-            .accessibilityLabel("牌库")
+            .accessibilityLabel("牌义")
         }
-        .padding(.horizontal, 2)
-        .padding(.bottom, 2)
+        .padding(.top, 2)
+        .padding(.bottom, 18)
     }
 
-    // MARK: 文字
+    // MARK: 待拆包
 
-    private var metaBlock: some View {
+    private var sealedView: some View {
         VStack(spacing: 0) {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
+            HStack(spacing: 6) {
+                Text("👆").font(.system(size: 14))
+                Text("拖动 / 点击撕开")
+            }
+            .font(.system(size: 12))
+            .foregroundStyle(Theme.textTertiary)
+            .opacity(Double(max(0, 1 - tear * 4)))
+            .padding(.bottom, 16)
+
+            ZStack(alignment: .top) {
+                Image("pack")
+                    .resizable()
+                    .scaledToFit()
+                    .mask(TornRemainder(progress: tear, ratio: tearRatio))
+                    .shadow(color: .black.opacity(0.28), radius: 18, y: 12)
+
+                if tear > 0.01 {
+                    Image("torn-strip")
+                        .resizable()
+                        .scaledToFit()
+                        .offset(x: -tear * 44, y: -tear * 58)
+                        .rotationEffect(.degrees(Double(-tear * 7)), anchor: .topLeading)
+                        .shadow(color: .black.opacity(0.22), radius: 10, y: 6)
+                }
+            }
+            .frame(width: packWidth, height: packHeight)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 6)
+                    .onChanged { value in
+                        let next = min(1, max(0, value.translation.width / 110))
+                        tear = next
+                        if next > 0.45 { finishTear() }
+                    }
+                    .onEnded { _ in
+                        if tear > 0.18 { finishTear() }
+                        else {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { tear = 0 }
+                        }
+                    }
+            )
+            .onTapGesture { finishTear() }
+
+            Text("今日主牌已备好，拆包看看今天的运势吧")
+                .font(.system(size: 12.5))
+                .foregroundStyle(Theme.textSecondary)
+                .padding(.top, 26)
+        }
+        .padding(.top, 14)
+    }
+
+    // MARK: 揭晓
+
+    private var revealedView: some View {
+        VStack(spacing: 0) {
+            CardFan(
+                backName: "back",
+                faceName: card.slug,
+                isFlipped: isFlipped,
+                onTapFace: { isDetailPresented = true }
+            )
+            .frame(height: 376)
+            .padding(.top, 8)
+
+            Text("✨ 恭喜获得今日主牌")
+                .font(.system(size: 12.5, weight: .medium))
+                .foregroundStyle(Theme.text)
+                .padding(.top, 6)
+
+            HStack(alignment: .firstTextBaseline, spacing: 7) {
                 Text(card.name)
-                    .font(.system(size: 23, weight: .medium))
+                    .font(.system(size: 21, weight: .semibold))
                     .foregroundStyle(Theme.text)
                 Text(card.en)
-                    .font(.system(size: 13, design: .serif))
+                    .font(.system(size: 12, design: .serif))
                     .foregroundStyle(Theme.textTertiary)
             }
-            Text("\(card.positionText(reversed: reversed)) · 大阿尔卡纳 \(card.roman)")
-                .font(.system(size: 11.5))
-                .foregroundStyle(Theme.textTertiary)
-                .padding(.top, 6)
+            .padding(.top, 6)
+
             HStack(spacing: 6) {
-                ForEach(card.keywords(reversed: reversed), id: \.self) { keyword in
+                ForEach(card.keywords(reversed: isReversed), id: \.self) { keyword in
                     AccentChip(text: keyword)
                 }
             }
+            .padding(.top, 10)
+
+            Text("点击牌面查看牌义")
+                .font(.system(size: 11))
+                .foregroundStyle(Theme.textTertiary)
+                .padding(.top, 10)
+
+            Button {
+                redraw()
+            } label: {
+                Text("重新抽一张")
+                    .font(.system(size: 14.5, weight: .medium))
+                    .foregroundStyle(Theme.text)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 48)
+                    .background(
+                        RoundedRectangle(cornerRadius: 15, style: .continuous)
+                            .fill(Theme.surface)
+                    )
+            }
+            .buttonStyle(PressableStyle())
             .padding(.top, 14)
         }
-        .animation(.easeOut(duration: 0.45), value: isMetaVisible)
     }
 
-    private var readingCard: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("牌义").cardLabel()
-                Spacer()
-                Text(reversed ? "逆位" : "正位")
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(Theme.textTertiary)
-            }
-            .padding(.bottom, 11)
-            Text(card.text(reversed: reversed))
-                .font(.system(size: 13))
-                .lineSpacing(5)
-                .foregroundStyle(Theme.textSecondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .cardSurface()
+    // MARK: 动作
+
+    private func load() {
+        guard !didLoad else { return }
+        didLoad = true
+        let today = TarotService.ensureToday(in: context)
+        draw = today
+        phase = today.isOpened ? .revealed : .sealed
+        isFlipped = today.isOpened
+        if today.isOpened { confettiToken = 0 }
     }
 
-    // MARK: 抽牌
+    private func finishTear() {
+        guard phase == .sealed else { return }
+        withAnimation(.easeOut(duration: 0.18)) { tear = 1 }
+        draw?.isOpened = true
+        try? context.save()
+        AppLog.info("拆包：今天的牌是 \(card.name)\(isReversed ? "逆位" : "正位")")
 
-    /// 收牌 → 洗牌 → 发牌 → 翻面
-    private func redraw() {
-        guard !isBusy, let draw else { return }
-        isBusy = true
-        isMetaVisible = false
-
-        withAnimation(.easeIn(duration: 0.35)) {
-            isFlipped = false
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.36) {
-            withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
-                isShuffling = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) {
+            withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
+                phase = .revealed
             }
-
+            confettiToken += 1
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.42) {
-                TarotService.redraw(draw, in: context)
-                withAnimation(.spring(response: 0.45, dampingFraction: 0.75)) {
-                    isShuffling = false
-                    isDealt = true
-                }
-
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) {
-                    withAnimation(.spring(response: 0.8, dampingFraction: 0.82)) {
-                        isFlipped = true
-                    }
-
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-                        withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
-                            isDealt = false
-                        }
-                        withAnimation(.easeOut(duration: 0.4)) {
-                            isMetaVisible = true
-                        }
-                        isBusy = false
-                    }
+                withAnimation(.spring(response: 0.85, dampingFraction: 0.82)) {
+                    isFlipped = true
                 }
             }
         }
+    }
+
+    private func redraw() {
+        guard let draw else { return }
+        withAnimation(.easeIn(duration: 0.25)) { isFlipped = false }
+        TarotService.redraw(draw, in: context)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.32) {
+            confettiToken += 1
+            withAnimation(.spring(response: 0.85, dampingFraction: 0.82)) {
+                isFlipped = true
+            }
+        }
+        draw.isOpened = true
+        try? context.save()
     }
 }
 
-// MARK: - 牌堆
+// MARK: - 撕裂形状
 
-struct DeckView: View {
-    let card: TarotCard
+/// 保留卡包下方主体，顶部按比例切掉，切口是锯齿状。
+struct TornRemainder: Shape {
+    var progress: CGFloat
+    var ratio: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let cut = rect.height * ratio * progress
+        path.move(to: CGPoint(x: rect.minX, y: cut))
+
+        var x = rect.minX
+        var up = true
+        while x < rect.maxX {
+            let next = min(x + 7, rect.maxX)
+            path.addLine(to: CGPoint(x: next, y: cut + (up ? -2 : 2)))
+            x = next
+            up.toggle()
+        }
+
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+        path.closeSubpath()
+        return path
+    }
+}
+
+// MARK: - 牌阵
+
+struct CardFan: View {
+    let backName: String
+    let faceName: String
     let isFlipped: Bool
-    let isShuffling: Bool
-    let isDealt: Bool
+    var onTapFace: () -> Void
 
-    private let cardWidth: CGFloat = 180
-    private let cardHeight: CGFloat = 270
+    private let cardWidth: CGFloat = 196
+    private let cardHeight: CGFloat = 297
 
     var body: some View {
         ZStack {
-            ghost(rotation: 6, offset: CGSize(width: 7, height: 7), opacity: 0.35)
-                .offset(x: isShuffling ? 18 : 0, y: isShuffling ? -2 : 0)
-                .rotationEffect(.degrees(isShuffling ? 11 : 6))
-
-            ghost(rotation: -5, offset: CGSize(width: -6, height: 4), opacity: 0.55)
-                .offset(x: isShuffling ? -16 : 0, y: isShuffling ? -4 : 0)
-                .rotationEffect(.degrees(isShuffling ? -9 : -5))
-
-            flippingCard
-                .offset(y: isDealt ? -18 : 0)
-                .scaleEffect(isDealt ? 1.03 : 1)
+            mini(index: 0, x: -112, y: 18, angle: -15, scale: 0.9, opacity: 0.8)
+            mini(index: 1, x: -64, y: 8, angle: -7.5, scale: 0.95, opacity: 0.95)
+            mini(index: 2, x: 64, y: 8, angle: 7.5, scale: 0.95, opacity: 0.95)
+            hero
+            mini(index: 3, x: 112, y: 18, angle: 15, scale: 0.9, opacity: 0.8)
         }
-        .frame(width: cardWidth, height: cardHeight)
-        .frame(height: 330)
-        .animation(.spring(response: 0.55, dampingFraction: 0.75), value: isShuffling)
-        .animation(.spring(response: 0.55, dampingFraction: 0.8), value: isDealt)
     }
 
-    private func ghost(rotation: Double, offset: CGSize, opacity: Double) -> some View {
-        CardArt(name: "card-back")
+    private func mini(index: Int, x: CGFloat, y: CGFloat, angle: Double, scale: CGFloat, opacity: Double) -> some View {
+        Image(backName)
+            .resizable()
+            .scaledToFill()
             .frame(width: cardWidth, height: cardHeight)
-            .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 13, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.13), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [.clear, Color(hex: 0x9BD7FF).opacity(0.18), Color(hex: 0xFF9BE0).opacity(0.14), .clear],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .blendMode(.screen)
+                    .allowsHitTesting(false)
             )
-            .rotationEffect(.degrees(rotation))
-            .offset(offset)
+            .shadow(color: .black.opacity(0.28), radius: 16, y: 10)
+            .rotationEffect(.degrees(angle))
+            .scaleEffect(scale)
+            .offset(x: x, y: y)
             .opacity(opacity)
     }
 
-    private var flippingCard: some View {
+    private var hero: some View {
         ZStack {
-            CardArt(name: "card-back")
+            heroBack
                 .opacity(isFlipped ? 0 : 1)
 
-            CardArt(name: card.slug)
+            Image(faceName)
+                .resizable()
+                .scaledToFill()
+                .frame(width: cardWidth, height: cardHeight)
+                .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
                 .rotation3DEffect(.degrees(180), axis: (x: 0, y: 1, z: 0))
                 .opacity(isFlipped ? 1 : 0)
         }
         .frame(width: cardWidth, height: cardHeight)
-        .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 13, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.18), lineWidth: 1)
-        )
-        .shadow(color: .black.opacity(0.9), radius: 30, y: 18)
+        .shadow(color: .black.opacity(0.35), radius: 22, y: 14)
         .rotation3DEffect(.degrees(isFlipped ? 180 : 0), axis: (x: 0, y: 1, z: 0), perspective: 0.55)
+        .onTapGesture { if isFlipped { onTapFace() } }
+    }
+
+    private var heroBack: some View {
+        Image(backName)
+            .resizable()
+            .scaledToFill()
+            .frame(width: cardWidth, height: cardHeight)
+            .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [.clear, Color(hex: 0x9BD7FF).opacity(0.22), Color(hex: 0xFF9BE0).opacity(0.18), .clear],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .blendMode(.screen)
+                    .allowsHitTesting(false)
+            )
     }
 }
 
-// MARK: - 牌库
+// MARK: - 纸屑
 
-struct TarotDeckSheet: View {
+struct ConfettiOverlay: View {
+    let token: Int
+
+    @State private var particles: [Particle] = []
+    @State private var start = Date()
+
+    struct Particle: Identifiable {
+        let id = UUID()
+        let color: Color
+        let dx: CGFloat
+        let dy: CGFloat
+        let rotation: Double
+        let delay: Double
+        let size: CGSize
+        let x: CGFloat
+        let y: CGFloat
+    }
+
+    var body: some View {
+        TimelineView(.animation) { timeline in
+            Canvas { ctx, size in
+                let elapsed = timeline.date.timeIntervalSince(start)
+                for p in particles {
+                    let t = elapsed - p.delay
+                    guard t > 0, t < 2.2 else { continue }
+                    let progress = min(1, t / 2.0)
+                    let ease = 1 - pow(1 - progress, 2)
+                    let center = CGPoint(
+                        x: size.width * p.x + p.dx * CGFloat(ease),
+                        y: size.height * p.y + p.dy * CGFloat(ease * ease)
+                    )
+                    let alpha = progress < 0.08 ? progress / 0.08 : max(0, 1 - (progress - 0.55) / 0.45)
+                    guard alpha > 0.02 else { continue }
+
+                    var context = ctx
+                    context.translateBy(x: center.x, y: center.y)
+                    context.rotate(by: .degrees(p.rotation * progress))
+                    context.opacity = alpha
+
+                    let rect = CGRect(
+                        x: -p.size.width / 2,
+                        y: -p.size.height / 2,
+                        width: p.size.width,
+                        height: p.size.height
+                    )
+                    context.fill(Path(roundedRect: rect, cornerRadius: 1.5), with: .color(p.color))
+                }
+            }
+        }
+        .onChange(of: token) { _, _ in spawn() }
+        .onAppear { if token > 0 { spawn() } }
+    }
+
+    private func spawn() {
+        let colors: [Color] = [
+            Color(hex: 0xFF7AB6), Color(hex: 0x7AD1FF), Color(hex: 0xFFD77A),
+            Color(hex: 0xA58BFF), Color(hex: 0x7BE0A8), Color(hex: 0xFF9F7A)
+        ]
+        particles = (0..<56).map { index in
+            let angle = Double.random(in: 0...(2 * .pi))
+            let distance = CGFloat.random(in: 70...250)
+            return Particle(
+                color: colors[index % colors.count],
+                dx: CGFloat(cos(angle)) * distance,
+                dy: CGFloat(sin(angle)) * distance * 0.6 + 220,
+                rotation: Double.random(in: -360...360),
+                delay: Double.random(in: 0...0.12),
+                size: CGSize(width: CGFloat.random(in: 5...10), height: CGFloat.random(in: 8...16)),
+                x: CGFloat.random(in: 0.44...0.56),
+                y: CGFloat.random(in: 0.24...0.32)
+            )
+        }
+        start = Date()
+    }
+}
+
+// MARK: - 牌义
+
+struct TarotReadingSheet: View {
     @Environment(\.dismiss) private var dismiss
-    @State private var selected: TarotCard?
-
-    private let columns = [GridItem(.adaptive(minimum: 92), spacing: 10)]
+    let card: TarotCard
+    let isReversed: Bool
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                LazyVGrid(columns: columns, spacing: 12) {
-                    ForEach(TarotDeck.major) { card in
-                        Button {
-                            selected = card
-                        } label: {
-                            VStack(spacing: 6) {
-                                CardArt(name: card.slug)
-                                    .aspectRatio(2.0 / 3.0, contentMode: .fit)
-                                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                            .strokeBorder(Color.white.opacity(0.14), lineWidth: 1)
-                                    )
-                                Text(card.name)
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(Theme.textSecondary)
-                            }
-                        }
-                        .buttonStyle(PressableStyle())
+                VStack(spacing: 14) {
+                    CardArt(name: card.slug)
+                        .frame(width: 168, height: 250)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text(card.name).font(.system(size: 21, weight: .semibold))
+                            .foregroundStyle(Theme.text)
+                        Text(card.en).font(.system(size: 12, design: .serif))
+                            .foregroundStyle(Theme.textTertiary)
                     }
+
+                    Text("\(card.positionText(reversed: isReversed)) · 大阿尔卡纳 \(card.roman)")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(Theme.textTertiary)
+
+                    HStack(spacing: 6) {
+                        ForEach(card.keywords(reversed: isReversed), id: \.self) { keyword in
+                            AccentChip(text: keyword)
+                        }
+                    }
+
+                    Text(card.text(reversed: isReversed))
+                        .font(.system(size: 13))
+                        .lineSpacing(5)
+                        .foregroundStyle(Theme.textSecondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .multilineTextAlignment(.leading)
+                        .cardSurface()
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 14)
+                .padding(.horizontal, Theme.screenPadding)
+                .padding(.vertical, 16)
             }
             .background(Theme.bg)
-            .navigationTitle("大阿尔卡纳")
+            .navigationTitle("牌义")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("完成") { dismiss() }.foregroundStyle(Theme.text)
                 }
             }
-            .tint(Theme.ink)
-            .sheet(item: $selected) { card in
-                TarotCardDetail(card: card)
-            }
+            .tint(Theme.text)
         }
         .presentationBackground(Theme.bg)
-    }
-}
-
-struct TarotCardDetail: View {
-    @Environment(\.dismiss) private var dismiss
-    let card: TarotCard
-
-    var body: some View {
-        ScrollView {
-            VStack(spacing: 14) {
-                CardArt(name: card.slug)
-                    .frame(width: 168, height: 250)
-                    .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 13, style: .continuous)
-                            .strokeBorder(Color.white.opacity(0.18), lineWidth: 1)
-                    )
-                    .padding(.top, 12)
-
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(card.name).font(.system(size: 21, weight: .medium)).foregroundStyle(Theme.text)
-                    Text(card.en).font(.system(size: 12, design: .serif)).foregroundStyle(Theme.textTertiary)
-                }
-                Text("大阿尔卡纳 \(card.roman)")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Theme.textTertiary)
-
-                meaningBlock("正位", keywords: card.uprightKeywords, text: card.uprightText)
-                meaningBlock("逆位", keywords: card.reversedKeywords, text: card.reversedText)
-            }
-            .padding(.horizontal, Theme.screenPadding)
-            .padding(.bottom, 30)
-        }
-        .background(Theme.bg)
-        .presentationBackground(Theme.bg)
-        .overlay(alignment: .topTrailing) {
-            Button("关闭") { dismiss() }
-                .font(.system(size: 13))
-                .foregroundStyle(Theme.textSecondary)
-                .padding(16)
-        }
-    }
-
-    private func meaningBlock(_ title: String, keywords: [String], text: String) -> some View {
-        VStack(alignment: .leading, spacing: 9) {
-            Text(title).cardLabel()
-            HStack(spacing: 6) {
-                ForEach(keywords, id: \.self) { keyword in
-                    AccentChip(text: keyword)
-                }
-            }
-            Text(text)
-                .font(.system(size: 13))
-                .lineSpacing(5)
-                .foregroundStyle(Theme.textSecondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .cardSurface()
     }
 }
 
@@ -377,7 +505,7 @@ struct CardArt: View {
                     .scaledToFit()
             } else {
                 ZStack {
-                    Color.white.opacity(0.06)
+                    Theme.surface
                     Image(systemName: "sparkles")
                         .font(.system(size: 30))
                         .foregroundStyle(Theme.textTertiary)
@@ -387,7 +515,6 @@ struct CardArt: View {
         .saturation(grayscale ? 0 : 1)
     }
 
-    /// 优先找资源目录，其次找工程里拖进来的 Resources/Cards/*.webp
     static func load(_ name: String) -> UIImage? {
         if let image = UIImage(named: name) { return image }
         for ext in ["webp", "png", "jpg"] {

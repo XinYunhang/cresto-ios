@@ -45,6 +45,19 @@ jobs:
             echo "no COURSES_JSON secret, timetable will start empty"
           fi
 
+      - name: Write tarot assets
+        env:
+          TAROT_ASSETS_B64: ${{ secrets.TAROT_ASSETS }}
+        run: |
+          if [ -n "${TAROT_ASSETS_B64:-}" ]; then
+            echo "$TAROT_ASSETS_B64" | base64 --decode > "$RUNNER_TEMP/tarot.tar.gz"
+            mkdir -p Cresto/Resources/Tarot
+            tar -xzf "$RUNNER_TEMP/tarot.tar.gz" -C Cresto/Resources/Tarot
+            echo "tarot assets extracted"
+          else
+            echo "no TAROT_ASSETS secret; tarot art missing"
+          fi
+
       - name: Generate Xcode project
         run: xcodegen generate
 

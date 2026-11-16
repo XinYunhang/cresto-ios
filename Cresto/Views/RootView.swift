@@ -109,7 +109,7 @@ struct RootView: View {
         case .course:
             TimetableView()
         case .tarot:
-            TarotView(draw: todayDraw)
+            TarotView()
         }
     }
 }
