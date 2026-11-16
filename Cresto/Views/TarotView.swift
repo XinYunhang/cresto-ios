@@ -96,14 +96,14 @@ struct TarotView: View {
             .padding(.bottom, 16)
 
             ZStack(alignment: .top) {
-                Image("pack")
+                AssetImage.image("pack")
                     .resizable()
                     .scaledToFit()
                     .mask(TornRemainder(progress: tear, ratio: tearRatio))
                     .shadow(color: .black.opacity(0.28), radius: 18, y: 12)
 
                 if tear > 0.01 {
-                    Image("torn-strip")
+                    AssetImage.image("torn-strip")
                         .resizable()
                         .scaledToFit()
                         .offset(x: -tear * 44, y: -tear * 58)
@@ -227,18 +227,39 @@ struct TarotView: View {
         }
     }
 
+    /// 重新抽：换一张牌，并把包装放回去，再拆一次
     private func redraw() {
         guard let draw else { return }
-        withAnimation(.easeIn(duration: 0.25)) { isFlipped = false }
         TarotService.redraw(draw, in: context)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.32) {
-            confettiToken += 1
-            withAnimation(.spring(response: 0.85, dampingFraction: 0.82)) {
-                isFlipped = true
+        tear = 0
+        isFlipped = false
+        withAnimation(.easeInOut(duration: 0.25)) {
+            phase = .sealed
+        }
+    }
+}
+
+
+// MARK: - 素材加载
+
+/// SwiftUI 的 Image("name") 找不到直接扔进 bundle 的松散文件（webp/png），
+/// 这里走 Bundle.url + UIImage(contentsOfFile:) 显式加载。
+enum AssetImage {
+    static func ui(_ name: String) -> UIImage? {
+        if let image = UIImage(named: name) { return image }
+        for ext in ["png", "webp", "jpg", "jpeg"] {
+            if let url = Bundle.main.url(forResource: name, withExtension: ext),
+               let image = UIImage(contentsOfFile: url.path) {
+                return image
             }
         }
-        draw.isOpened = true
-        try? context.save()
+        AppLog.warn("素材缺失：(name)")
+        return nil
+    }
+
+    static func image(_ name: String) -> Image {
+        if let ui = ui(name) { return Image(uiImage: ui) }
+        return Image(systemName: "rectangle.dashed")
     }
 }
 
@@ -292,7 +313,7 @@ struct CardFan: View {
     }
 
     private func mini(index: Int, x: CGFloat, y: CGFloat, angle: Double, scale: CGFloat, opacity: Double) -> some View {
-        Image(backName)
+        AssetImage.image(backName)
             .resizable()
             .scaledToFill()
             .frame(width: cardWidth, height: cardHeight)
@@ -321,7 +342,7 @@ struct CardFan: View {
             heroBack
                 .opacity(isFlipped ? 0 : 1)
 
-            Image(faceName)
+            AssetImage.image(faceName)
                 .resizable()
                 .scaledToFill()
                 .frame(width: cardWidth, height: cardHeight)
