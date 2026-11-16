@@ -168,9 +168,16 @@ enum TarotDeck {
 final class DailyTarot {
     /// yyyy-MM-dd，一天一条
     var dateKey: String = ""
+    /// 中央位 · 现在（首页塔罗小卡显示这张）
     var cardID: Int = 0
+    /// 左位 · 过去
+    var card2ID: Int = 0
+    /// 右位 · 未来
+    var card3ID: Int = 0
     var isReversed: Bool = false
-    /// 今天这张牌是否已经拆过包（拆过就直接进揭晓态）
+    var isReversed2: Bool = false
+    var isReversed3: Bool = false
+    /// 今天是否已完成选牌（环形牌轮选满 3 张后由 commitSpread 置位）
     var isOpened: Bool = false
     var drawnAt: Date = Date()
 
@@ -212,25 +219,28 @@ enum TarotService {
         return draw
     }
 
-    /// 重新抽：随机换一张新牌并落库。只在用户撕包动作完成后由 TarotView 调用，
-    /// 保证“重新抽一张”绝不会提前渲染新牌背或新结果文字。
-    static func redraw(_ draw: DailyTarot, in context: ModelContext) {
-        var next = draw.cardID
-        while next == draw.cardID {
-            next = Int.random(in: 0...21)
-        }
-        draw.cardID = next
-        draw.isReversed = Bool.random()
-        // 换牌绑定发生在撕包完成的同一时刻，牌直接记为已拆
+    /// 三牌阵选满后提交：左·过去 / 中·现在 / 右·未来，一次落库并置为已拆。
+    /// 只在用户完成环形牌轮选牌后调用，保证在此之前不会提前渲染新牌。
+    static func commitSpread(
+        _ draw: DailyTarot, in context: ModelContext,
+        past: Int, present: Int, future: Int,
+        reversedPast: Bool, reversedPresent: Bool, reversedFuture: Bool
+    ) {
+        draw.card2ID = past
+        draw.cardID = present
+        draw.card3ID = future
+        draw.isReversed2 = reversedPast
+        draw.isReversed = reversedPresent
+        draw.isReversed3 = reversedFuture
         draw.isOpened = true
         draw.drawnAt = Date()
         try? context.save()
-        AppLog.info("重新抽牌：\(draw.card.name) \(draw.isReversed ? "逆位" : "正位")")
+        AppLog.info("三牌阵已定：过去\(TarotDeck.card(id: past).name) · 现在\(TarotDeck.card(id: present).name) · 未来\(TarotDeck.card(id: future).name)")
     }
 
     /// 重新抽第一步：只把今天这条标记为未拆封，牌面数据保持不变——
-    /// 首页塔罗小卡继续显示旧牌（不剧透），塔罗页切回 sealed 展示密封卡包；
-    /// 真正的随机换牌在用户完成撕包动作后由 redraw(_:in:) 执行。
+    /// 首页塔罗小卡继续显示旧牌阵的中央牌（不剧透），塔罗页切回 sealed 展示密封卡包；
+    /// 新牌阵在用户完成环形牌轮选牌后由 commitSpread(_:in:) 落库。
     static func markUnopened(_ draw: DailyTarot, in context: ModelContext) {
         draw.isOpened = false
         try? context.save()

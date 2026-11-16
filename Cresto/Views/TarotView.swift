@@ -2,28 +2,31 @@ import SwiftUI
 import SwiftData
 import UIKit
 
-/// 每日一抽 · 塔罗抽牌模块
+/// 每日一抽 · 塔罗抽牌模块（三牌阵 · 环形牌轮版）
 ///
-/// 四阶段状态机（防剧透时序）：
-///   sealed（未拆封）→ tearing（跟手撕开中）→ fannedOut（牌堆抽出展开）→ revealed（90° 翻牌揭晓）
+/// 四阶段状态机：
+///   sealed（未拆封）→ tearing（撕包仪式）→ wheelSelection（环形牌轮选 3 张）→ spreadRevealed（三牌阵翻牌揭晓）
 ///
-/// 物理与光影参数移植自 holo-reverse（github.com/xxbb11122/holo-reverse，_ref/app.js + _ref/styles.css）：
-/// - Spring(response, bounce) → SwiftUI `.spring(response:, dampingFraction: 1 - bounce)`
-///   卡包回弹 .7/.28（阻尼 0.72）、牌堆展开按需求固定 .45/0.72 错峰延迟
-/// - 撕裂方向锁：|dx| ≥ 8 且 |dx| > |dy|·0.5 才开始撕；进度 = dx·dir/(包宽·0.85)，只进不退
-/// - 撕条抛飞：横向 easeOut 飞出 + 纵向 easeOut 上抛（-150）转 easeIn 重力坠落（+520），带旋转与渐隐
-/// - 彩带粒子：重力 2600pt/s²、隐式阻力 1/(1 + c·min(1, .06+age/.45)·v·dt)、侧滑 slip/glide、
-///   翻滚透视压扁 cos((rot-rot0)·0.7°)，三类形状（圆点/彩带/星尘）、七彩+白
-/// - 全息层：110° 多色循环渐变（400% 幅面随倾斜流动）+ .colorDodge + 阈值噪点闪粉 + 径向 glare
+/// 交互与动画要点：
+/// - 撕条 0.35s 抛物线飞出（右上/左上、旋转 25°、渐隐），卡包本体 spring(0.25, 0.6) 短促回弹
+/// - 卡包退场：原地向下微移 40pt + 缩小至 0.88 + 快速渐隐（PackExit 过渡），与环形牌轮从卡包中心
+///   同帧交叉展开，画面无空白断层
+/// - TarotWheelView：22 张大阿卡纳牌背按等分角度排在圆周上，圆心偏移至 (0.82w, 0.54h)、半径 0.68w，
+///   左侧牌弧正好落在单手拇指热区；上下拖动带惯性旋转，点选牌背沿圆心法线外弹 28pt + scale 1.12 并锁定
+/// - 三牌阵（左·过去 / 中·现在 / 右·未来）：选满 3 张后牌轮淡出、卡牌飞入屏幕中央展开，
+///   支持逐张点击翻转与「一键全部翻开」；FaceGate 在 90° 帧无缝切换正反面（正面预置 180° 镜像修正），
+///   阴影透明度绑定 abs(cos(angle))，90° 垂直瞬间归零，彻底消除黑色竖线
+/// - 每张牌的牌名/关键词与「查看牌阵解读」入口，仅在对应卡牌翻过 90° 后伴随 .spring() 淡入
+/// - 「重新抽一张」：立即清空已选数组/翻牌/文字/粒子状态（clearToken），以无重影方式切回 sealed，
+///   新牌池在进入新一轮选牌时重新洗牌生成
 struct TarotView: View {
     @Environment(\.modelContext) private var context
 
     @State private var draw: DailyTarot?
     @State private var didLoad = false
     @State private var phase: Phase = .sealed
-    @State private var isDetailPresented = false
-    /// 重新抽流程标记：撕包动作完成后才执行随机换牌（TarotService.redraw）
     @State private var isRedraw = false
+    @State private var isReadingPresented = false
 
     // MARK: sealed —— 跟手撕包
     @State private var tearProgress: CGFloat = 0
@@ -33,7 +36,7 @@ struct TarotView: View {
     @State private var deform: CGFloat = 0
     @State private var jag: [CGFloat] = TarotView.makeJag()
 
-    // MARK: tearing —— 撕条抛飞 + 卡包坠出
+    // MARK: tearing —— 撕条抛飞 + 卡包退场
     @State private var stripFlying = false
     @State private var stripBase: CGSize = .zero
     @State private var stripBaseRotation: Double = 0
@@ -41,62 +44,73 @@ struct TarotView: View {
     @State private var stripFlyY: CGFloat = 0
     @State private var stripFlyRotation: Double = 0
     @State private var stripFlyOpacity: Double = 1
-    @State private var packDropped = false
+    @State private var packRecoil = false
 
-    // MARK: fannedOut —— 牌堆抽出扇形展开
-    @State private var fanSpread = false
+    // MARK: wheelSelection —— 环形牌轮
+    @State private var pool: [Int] = []
+    @State private var poolReversed: [Bool] = []
+    @State private var selectedSlots: [Int] = []
+    @State private var wheelAngle: Double = 0
+    @State private var wheelBorn = false
 
-    // MARK: revealed —— 90° 翻牌揭晓
-    @State private var flipAngle: Double = 0
-    @State private var revealShown = false
+    // MARK: spreadRevealed —— 三牌阵
+    @State private var flipAllToken = 0
+    @State private var revealedCount = 0
+    @State private var spreadSettled = false
+    @State private var loadedOpened = false
+
     @State private var confettiToken = 0
+    @State private var clearToken = 0
 
-    // MARK: 全息倾斜（DragGesture 驱动）
-    @State private var holoDrag: CGSize = .zero
-
-    enum Phase { case sealed, tearing, fannedOut, revealed }
+    enum Phase { case sealed, tearing, wheelSelection, spreadRevealed }
 
     private var card: TarotCard { draw?.card ?? TarotDeck.major[0] }
-    private var isReversed: Bool { draw?.isReversed ?? false }
 
     private let packWidth: CGFloat = 236
     private let packHeight: CGFloat = 386
     /// 撕口位置（占卡包高度比例），与素材撕裂线一致
     private let tearRatio: CGFloat = 0.358
-    private let cardWidth: CGFloat = 196
-    private let cardHeight: CGFloat = 297
+    private let spreadCardWidth: CGFloat = 106
+    private let spreadCardHeight: CGFloat = 160
 
     var body: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            VStack(spacing: 0) {
-                header
+        ZStack(alignment: .top) {
+            Theme.bg.ignoresSafeArea()
 
-                if !didLoad {
-                    // 首帧占位：onAppear 恢复状态前不渲染任何牌面/文字，杜绝重启闪屏
-                    Color.clear.frame(height: 440)
-                } else if phase == .sealed || phase == .tearing {
-                    sealedScene
-                        .transition(.opacity)
-                } else {
-                    fanScene
-                        .transition(.opacity)
-                }
+            if !didLoad {
+                // 首帧占位：onAppear 恢复状态前不渲染任何牌面/文字，杜绝重启闪屏
+                Color.clear
+            } else if phase == .sealed || phase == .tearing {
+                sealedBranch
+                    .transition(.packExit)
+            } else if phase == .wheelSelection {
+                wheelBranch
+                    .transition(.opacity)
+            } else {
+                // 重新抽时移除必须瞬时（.identity），杜绝旧牌阵与新卡包的半透明双层重影
+                spreadBranch
+                    .transition(.asymmetric(insertion: .opacity, removal: .identity))
             }
-            .padding(.horizontal, Theme.screenPadding)
-            .padding(.bottom, 128)
-        }
-        .overlay {
-            ConfettiOverlay(token: confettiToken)
+
+            ConfettiOverlay(token: confettiToken, clearToken: clearToken)
                 .allowsHitTesting(false)
                 .ignoresSafeArea()
         }
-        .sheet(isPresented: $isDetailPresented) {
-            TarotReadingSheet(card: card, isReversed: isReversed)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .sheet(isPresented: $isReadingPresented) {
+            TarotSpreadSheet(
+                past: spreadCards.past,
+                present: spreadCards.present,
+                future: spreadCards.future,
+                reversedPast: spreadReversed.past,
+                reversedPresent: spreadReversed.present,
+                reversedFuture: spreadReversed.future
+            )
         }
         .onAppear(perform: load)
     }
 
-    // MARK: - 页头（全局结构，未改动）
+    // MARK: - 页头（仅 sealed / spreadRevealed 阶段显示；牌义按钮在完成选牌前禁用）
 
     private var header: some View {
         HStack(alignment: .top) {
@@ -111,22 +125,37 @@ struct TarotView: View {
             }
             Spacer()
             Button {
-                isDetailPresented = true
+                isReadingPresented = true
             } label: {
                 Image(systemName: "square.stack.3d.up")
                     .font(.system(size: 16))
                     .foregroundStyle(Theme.text)
                     .frame(width: 38, height: 38)
                     .glassCircle()
+                    .opacity(draw?.isOpened == true ? 1 : 0.4)
             }
             .buttonStyle(PressableStyle())
-            .accessibilityLabel("牌义")
+            .disabled(draw?.isOpened != true)
+            .accessibilityLabel("牌阵解读")
         }
         .padding(.top, 2)
         .padding(.bottom, 18)
     }
 
-    // MARK: - 阶段 1/2：sealed + tearing（卡包、撕条、跟手物理）
+    // MARK: - 阶段 1/2：sealed + tearing
+
+    private var sealedBranch: some View {
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(spacing: 0) {
+                header
+                sealedScene
+            }
+            .padding(.horizontal, Theme.screenPadding)
+            .padding(.bottom, 128)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.top, 14)
+    }
 
     private var sealedScene: some View {
         VStack(spacing: 0) {
@@ -140,9 +169,9 @@ struct TarotView: View {
             .padding(.bottom, 16)
 
             ZStack(alignment: .top) {
-                // 下半截卡包：随撕裂进度裁切，重力坠出
+                // 下半截卡包：随撕裂进度裁切，原地微移退场
                 packBody
-                // 顶部撕条：跟手层 / 抛飞层（同一素材同一坐标系，禁止先隐藏再瞬移）
+                // 顶部撕条：跟手层 / 抛飞层（同一素材同一坐标系，位置连续无瞬移）
                 if !stripFlying {
                     stripLayer
                 } else {
@@ -156,17 +185,16 @@ struct TarotView: View {
                 tearZone
             }
 
-            Text("今日主牌已备好，拆包看看今天的运势吧")
+            Text("今日牌阵已备好，拆包后从牌轮中抽取 3 张")
                 .font(.system(size: 12.5))
                 .foregroundStyle(Theme.textSecondary)
                 .opacity(tearProgress < 0.02 && !stripFlying ? 1 : 0)
                 .animation(.easeOut(duration: 0.2), value: tearProgress)
                 .padding(.top, 26)
         }
-        .padding(.top, 14)
     }
 
-    /// 卡包下半截：3D 倾斜 + 阻力形变 + 撕裂裁切 + 坠落退场
+    /// 卡包本体：3D 倾斜 + 阻力形变 + 撕裂裁切 + 撕包瞬间的短促弹簧回弹
     private var packBody: some View {
         AssetImage.image("pack")
             .resizable()
@@ -174,10 +202,9 @@ struct TarotView: View {
             .mask(TornEdge(keepBelow: true, progress: tearProgress, ratio: tearRatio, jitter: jag))
             .shadow(color: .black.opacity(0.28), radius: 18, y: 12)
             .scaleEffect(x: 1 + deform * 0.02, y: 1 - deform * 0.028)
+            .scaleEffect(packRecoil ? 0.96 : 1)
             .rotation3DEffect(.degrees(packTilt.width), axis: (x: 0, y: 1, z: 0), perspective: 0.7)
             .rotation3DEffect(.degrees(-packTilt.height), axis: (x: 1, y: 0, z: 0), perspective: 0.7)
-            .offset(y: packDropped ? 1150 : 0)
-            .rotationEffect(.degrees(packDropped ? Double(tearDirection * 9) : 0), anchor: .bottom)
     }
 
     /// 跟手中的撕条：位移/微旋与手指 1:1（不挂隐式动画）
@@ -194,7 +221,7 @@ struct TarotView: View {
             .offset(x: tearDirection * tearProgress * 46, y: -tearProgress * 58)
     }
 
-    /// 抛飞中的撕条：从冻结的跟手位置出发做抛物线 + 旋转 + 渐隐（位置连续，无瞬移）
+    /// 抛飞中的撕条：0.35s 内沿抛物线向右上/左上旋转 25° 并渐隐，绝不在卡包上方悬停平移
     private var flyingStrip: some View {
         AssetImage.image("torn-strip")
             .resizable()
@@ -219,7 +246,7 @@ struct TarotView: View {
             .onTapGesture { beginTearTap() }
     }
 
-    /// 整卡拖动：微弱 3D 倾斜反馈；松手按 holo-reverse 卡包弹簧（response .7, 阻尼 .72）回正
+    /// 整卡拖动：微弱 3D 倾斜反馈；松手按弹簧回正
     private var packTiltGesture: some Gesture {
         DragGesture(minimumDistance: 6)
             .onChanged { value in
@@ -230,7 +257,7 @@ struct TarotView: View {
                 )
             }
             .onEnded { _ in
-                withAnimation(.spring(response: 0.7, dampingFraction: 0.72)) {
+                withAnimation(.spring(response: 0.5, dampingFraction: 0.72)) {
                     packTilt = .zero
                 }
             }
@@ -243,19 +270,17 @@ struct TarotView: View {
                 guard !stripFlying, phase == .sealed || phase == .tearing else { return }
                 let dx = value.translation.width
                 let dy = value.translation.height
-                // 撕包全程给卡包微弱 3D 倾斜反馈
                 packTilt = CGSize(
                     width: max(-140, min(140, dx)) * 0.07,
                     height: max(-140, min(140, dy)) * 0.05
                 )
                 if !tearStarted {
-                    // holo-reverse 方向锁：横向意图足够强才开始撕，否则只是拽动卡包
+                    // 方向锁：横向意图足够强才开始撕，否则只是拽动卡包
                     if abs(dx) < 8 || abs(dx) < abs(dy) * 0.5 { return }
                     tearDirection = dx < 0 ? -1 : 1
                     tearStarted = true
                     phase = .tearing
                 }
-                // 进度 = dx·dir/(宽·0.85)，只进不退（已撕开的部分不回退）
                 let progress = max(0, min(1, dx * tearDirection / (packWidth * 0.85)))
                 tearProgress = max(tearProgress, progress)
                 deform = tearProgress
@@ -265,8 +290,7 @@ struct TarotView: View {
                 if tearProgress > 0.45 {
                     finishTear()
                 } else {
-                    // 未到阈值：倾斜与形变弹回；几乎没撕的直接归位，半撕状态保留可续撕
-                    withAnimation(.spring(response: 0.6, dampingFraction: 0.7)) {
+                    withAnimation(.spring(response: 0.5, dampingFraction: 0.7)) {
                         packTilt = .zero
                         deform = 0
                     }
@@ -292,7 +316,7 @@ struct TarotView: View {
         finishTear()
     }
 
-    // MARK: - 撕包完成：抛飞、坠出、换牌绑定、牌堆登场
+    // MARK: - 撕包完成：撕条抛飞 + 卡包退场 + 牌轮同帧展开
 
     private func finishTear() {
         guard phase == .sealed || phase == .tearing, !stripFlying else { return }
@@ -304,286 +328,227 @@ struct TarotView: View {
         stripFlying = true
 
         // 撕口裁切补完到整条撕线
-        withAnimation(.easeOut(duration: 0.18)) {
+        withAnimation(.easeOut(duration: 0.15)) {
             tearProgress = 1
         }
-        withAnimation(.spring(response: 0.6, dampingFraction: 0.7)) {
+        // 卡包本体短促弹簧回弹（被撕开瞬间的 recoil）
+        withAnimation(.spring(response: 0.25, dampingFraction: 0.6)) {
+            packRecoil = true
             deform = 0
             packTilt = .zero
         }
 
-        // 撕条抛飞：横向 easeOut 飞出（沿撕开方向，默认朝左上）
-        withAnimation(.easeOut(duration: 0.3)) {
-            stripFlyX = tearDirection * 320
+        // 撕条 0.35s 抛物线飞出：横向 easeOut + 纵向上抛 easeOut，旋转 25°，尾段渐隐
+        withAnimation(.easeOut(duration: 0.35)) {
+            stripFlyX = tearDirection * 280
+            stripFlyY = -230
+            stripFlyRotation = Double(tearDirection * -25)
         }
-        // 纵向上抛减速（easeOut），随后重力加速坠落（easeIn）——参考 ref: vy=-1900, g=2600
-        withAnimation(.easeOut(duration: 0.26)) {
-            stripFlyY = -150
-        }
-        withAnimation(.easeIn(duration: 0.55).delay(0.26)) {
-            stripFlyY = 520
-        }
-        withAnimation(.easeOut(duration: 0.5)) {
-            stripFlyRotation = Double(tearDirection * -42)
-        }
-        withAnimation(.linear(duration: 0.22).delay(0.52)) {
+        withAnimation(.linear(duration: 0.22).delay(0.13)) {
             stripFlyOpacity = 0
         }
 
-        // 卡包下半截：重力坠出屏幕（ref: fall.v=1500, g=2800，坠落时朝撕开方向倾倒 9°）
-        withAnimation(.easeIn(duration: 0.55)) {
-            packDropped = true
+        // 同帧交叉：卡包原地退场（PackExit：下移 40pt + 0.88 + 渐隐）与环形牌轮从卡包中心展开
+        // 新牌池在进入新一轮选牌时重新洗牌生成
+        withAnimation(.easeOut(duration: 0.45)) {
+            phase = .wheelSelection
         }
-
-        // ★ 数据绑定时序：撕包动作完成后才执行随机换牌/开牌，绝不允许提前渲染新牌
-        if let draw {
-            if isRedraw {
-                TarotService.redraw(draw, in: context)
-            } else {
-                draw.isOpened = true
-                try? context.save()
-            }
-            AppLog.info("拆包：今天的牌是 \(draw.card.name)\(draw.isReversed ? "逆位" : "正位")")
-        }
-
-        // 牌堆在卡包坠出后登场
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-            withAnimation(.spring(response: 0.45, dampingFraction: 0.72)) {
-                phase = .fannedOut
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) {
-                // 5 张牌背从中心叠合状态抽出，向两侧错峰弹簧展开
-                withAnimation(.spring(response: 0.45, dampingFraction: 0.72)) {
-                    fanSpread = true
-                }
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                startFlip()
+        pool = TarotDeck.major.map(\.id).shuffled()
+        poolReversed = (0..<TarotDeck.major.count).map { _ in Bool.random() }
+        selectedSlots = []
+        wheelBorn = false
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            withAnimation(.spring(response: 0.55, dampingFraction: 0.8)) {
+                wheelBorn = true
             }
         }
     }
 
-    // MARK: - 阶段 3/4：fannedOut + revealed（牌阵、90° 翻牌、全息、揭晓文字）
+    // MARK: - 阶段 3：wheelSelection（环形牌轮 + 顶部三段进度）
 
-    private var fanScene: some View {
-        VStack(spacing: 0) {
-            ZStack {
-                fanCard(index: -2)
-                fanCard(index: -1)
-                fanCard(index: 1)
-                fanCard(index: 2)
-                heroCard
-            }
-            .frame(height: 376)
-            .padding(.top, 8)
+    private var wheelBranch: some View {
+        ZStack(alignment: .topLeading) {
+            TarotWheelView(
+                pool: pool,
+                poolReversed: poolReversed,
+                selectedSlots: selectedSlots,
+                wheelAngle: $wheelAngle,
+                onSelect: selectSlot
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            // ★ 结果文字全部由 revealShown 门控：主牌翻过 90°（phase == .revealed）才伴随弹簧逐条淡入
-            staged(0.05) {
-                Text("✨ 恭喜获得今日主牌")
+            VStack(alignment: .leading, spacing: 10) {
+                progressCapsules
+                Text(guideText)
                     .font(.system(size: 12.5, weight: .medium))
-                    .foregroundStyle(Theme.text)
+                    .foregroundStyle(Theme.textSecondary)
+                    .animation(.easeOut(duration: 0.2), value: selectedSlots.count)
             }
-            .padding(.top, 6)
+            .padding(.horizontal, Theme.screenPadding)
+            .padding(.top, 10)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .scaleEffect(wheelBorn ? 1 : 0.22)
+        .opacity(wheelBorn ? 1 : 0)
+    }
 
-            staged(0.12) {
-                HStack(alignment: .firstTextBaseline, spacing: 7) {
-                    Text(card.name)
-                        .font(.system(size: 21, weight: .semibold))
-                        .foregroundStyle(Theme.text)
-                    Text(card.en)
-                        .font(.system(size: 12, design: .serif))
-                        .foregroundStyle(Theme.textTertiary)
+    /// 极简三段式进度条：每选定 1 张点亮 1 段
+    private var progressCapsules: some View {
+        HStack(spacing: 6) {
+            ForEach(0..<3, id: \.self) { index in
+                Capsule()
+                    .fill(index < selectedSlots.count ? Theme.text : Theme.text.opacity(0.14))
+                    .frame(width: 34, height: 5)
+            }
+        }
+        .animation(.spring(response: 0.35, dampingFraction: 0.7), value: selectedSlots.count)
+    }
+
+    private var guideText: String {
+        let count = selectedSlots.count
+        if count >= 3 { return "牌阵已集齐，正在展开…" }
+        return "请从牌轮中选择 3 张牌 (\(count)/3)"
+    }
+
+    /// 点选一张牌背：径向外弹锁定；选满 3 张后提交记录并进入三牌阵
+    private func selectSlot(_ slot: Int) {
+        guard phase == .wheelSelection, selectedSlots.count < 3, !selectedSlots.contains(slot) else { return }
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
+            selectedSlots.append(slot)
+        }
+        guard selectedSlots.count == 3, pool.count == TarotDeck.major.count else { return }
+        let slots = selectedSlots
+        let past = pool[slots[0]]
+        let present = pool[slots[1]]
+        let future = pool[slots[2]]
+        if let draw {
+            TarotService.commitSpread(
+                draw, in: context,
+                past: past, present: present, future: future,
+                reversedPast: poolReversed[slots[0]],
+                reversedPresent: poolReversed[slots[1]],
+                reversedFuture: poolReversed[slots[2]]
+            )
+        }
+        isRedraw = false
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+            withAnimation(.easeInOut(duration: 0.4)) {
+                phase = .spreadRevealed
+            }
+            spreadSettled = false
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) {
+                withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
+                    spreadSettled = true
                 }
             }
-            .padding(.top, 6)
+        }
+    }
 
-            staged(0.2) {
-                HStack(spacing: 6) {
-                    ForEach(card.keywords(reversed: isReversed), id: \.self) { keyword in
-                        AccentChip(text: keyword)
+    // MARK: - 阶段 4：spreadRevealed（三牌阵 + 防穿帮翻牌）
+
+    private var spreadBranch: some View {
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(spacing: 0) {
+                header
+
+                HStack(alignment: .top, spacing: 12) {
+                    spreadCard(index: 0, positionLabel: "过去", card: spreadCards.past, reversed: spreadReversed.past)
+                    spreadCard(index: 1, positionLabel: "现在", card: spreadCards.present, reversed: spreadReversed.present)
+                    spreadCard(index: 2, positionLabel: "未来", card: spreadCards.future, reversed: spreadReversed.future)
+                }
+                .padding(.top, 4)
+
+                if revealedCount < 3 {
+                    Button {
+                        flipAllToken += 1
+                    } label: {
+                        Text("一键全部翻开")
+                            .font(.system(size: 14.5, weight: .medium))
+                            .foregroundStyle(Theme.text)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 48)
+                            .background(
+                                RoundedRectangle(cornerRadius: 15, style: .continuous)
+                                    .fill(Theme.surface)
+                            )
                     }
+                    .buttonStyle(PressableStyle())
+                    .transition(.opacity)
+                    .padding(.top, 20)
                 }
-            }
-            .padding(.top, 10)
 
-            staged(0.28) {
-                Text("点击牌面查看牌义")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Theme.textTertiary)
-            }
-            .padding(.top, 10)
+                if revealedCount >= 3 {
+                    Button {
+                        isReadingPresented = true
+                    } label: {
+                        Text("查看牌阵解读")
+                            .font(.system(size: 14.5, weight: .medium))
+                            .foregroundStyle(Theme.text)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 48)
+                            .background(
+                                RoundedRectangle(cornerRadius: 15, style: .continuous)
+                                    .fill(Theme.surface)
+                            )
+                    }
+                    .buttonStyle(PressableStyle())
+                    .transition(.opacity)
+                    .padding(.top, 20)
+                }
 
-            staged(0.36) {
                 Button {
                     redraw()
                 } label: {
                     Text("重新抽一张")
                         .font(.system(size: 14.5, weight: .medium))
-                        .foregroundStyle(Theme.text)
+                        .foregroundStyle(Theme.textSecondary)
                         .frame(maxWidth: .infinity)
                         .frame(height: 48)
-                        .background(
-                            RoundedRectangle(cornerRadius: 15, style: .continuous)
-                                .fill(Theme.surface)
-                        )
                 }
                 .buttonStyle(PressableStyle())
+                .padding(.top, 10)
             }
-            .padding(.top, 14)
+            .padding(.horizontal, Theme.screenPadding)
+            .padding(.bottom, 128)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.top, 14)
     }
 
-    /// 揭晓态文字的统一出场包装：隐藏时完全不可见且不响应点击
-    @ViewBuilder
-    private func staged(_ delay: Double, @ViewBuilder content: () -> some View) -> some View {
-        content()
-            .opacity(revealShown ? 1 : 0)
-            .offset(y: revealShown ? 0 : 14)
-            .allowsHitTesting(revealShown)
-            .animation(.spring(response: 0.5, dampingFraction: 0.8).delay(delay), value: revealShown)
+    /// 三牌阵中的一张：飞入入场 + 翻牌 + 逐牌文字门控
+    private func spreadCard(index: Int, positionLabel: String, card: TarotCard, reversed: Bool) -> some View {
+        RevealCard(
+            index: index,
+            positionLabel: positionLabel,
+            card: card,
+            reversed: reversed,
+            initiallyRevealed: loadedOpened,
+            flipAllTrigger: flipAllToken,
+            onNinety: { confettiToken += 1 },
+            onFlipped: { revealedCount += 1 },
+            onOpen: { isReadingPresented = true }
+        )
+        .opacity(spreadSettled ? 1 : 0)
+        .scaleEffect(spreadSettled ? 1 : 0.72)
+        .offset(x: spreadSettled ? 0 : 90)
+        .animation(.spring(response: 0.5, dampingFraction: 0.8).delay(Double(index) * 0.08), value: spreadSettled)
     }
 
-    /// 扇形两侧牌背：叠合(中心下方) → 错峰弹簧展开
-    private func fanCard(index: Int) -> some View {
-        let pose = fanSpread ? FanPose.fan(index) : FanPose.stacked
-        let delay = Double(abs(index)) * 0.06
-        return AssetImage.image("back")
-            .resizable()
-            .scaledToFill()
-            .frame(width: cardWidth, height: cardHeight)
-            .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [.clear, Color(hex: 0x9BD7FF).opacity(0.18), Color(hex: 0xFF9BE0).opacity(0.14), .clear],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .blendMode(.screen)
-                    .allowsHitTesting(false)
-            )
-            .shadow(color: .black.opacity(0.28), radius: 16, y: 10)
-            .rotationEffect(.degrees(pose.angle))
-            .scaleEffect(pose.scale)
-            .offset(x: pose.x, y: pose.y)
-            .opacity(pose.opacity)
-            .animation(.spring(response: 0.45, dampingFraction: 0.72).delay(delay), value: fanSpread)
+    /// 三牌阵牌面数据（cardID = 中央·现在，card2ID = 左·过去，card3ID = 右·未来）
+    private var spreadCards: (past: TarotCard, present: TarotCard, future: TarotCard) {
+        (
+            TarotDeck.card(id: draw?.card2ID ?? 0),
+            TarotDeck.card(id: draw?.cardID ?? 0),
+            TarotDeck.card(id: draw?.card3ID ?? 0)
+        )
     }
 
-    /// 中心主牌：升起 → Y 轴 180° 翻转（90° 临界切换正反面）→ 全息镭射 + 倾斜手势
-    private var heroCard: some View {
-        ZStack {
-            heroBack
-                .modifier(FaceGate(angle: flipAngle, front: false))
-            heroFace
-                .rotation3DEffect(.degrees(180), axis: (x: 0, y: 1, z: 0))
-                .modifier(FaceGate(angle: flipAngle, front: true))
-        }
-        .frame(width: cardWidth, height: cardHeight)
-        .shadow(color: .black.opacity(0.35), radius: 22, y: 14)
-        .rotation3DEffect(.degrees(holoTiltX), axis: (x: 1, y: 0, z: 0), perspective: 0.68)
-        .rotation3DEffect(.degrees(holoTiltY), axis: (x: 0, y: 1, z: 0), perspective: 0.68)
-        .rotation3DEffect(.degrees(flipAngle), axis: (x: 0, y: 1, z: 0), perspective: 0.55)
-        .offset(x: fanSpread ? 0 : FanPose.stacked.x, y: fanSpread ? 0 : FanPose.stacked.y)
-        .scaleEffect(fanSpread ? 1 : FanPose.stacked.scale)
-        .opacity(fanSpread ? 1 : 0)
-        .animation(.spring(response: 0.45, dampingFraction: 0.72), value: fanSpread)
-        .onTapGesture {
-            if phase == .revealed { isDetailPresented = true }
-        }
-        .simultaneousGesture(holoGesture)
-    }
-
-    private var heroBack: some View {
-        AssetImage.image("back")
-            .resizable()
-            .scaledToFill()
-            .frame(width: cardWidth, height: cardHeight)
-            .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [.clear, Color(hex: 0x9BD7FF).opacity(0.22), Color(hex: 0xFF9BE0).opacity(0.18), .clear],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .blendMode(.screen)
-                    .allowsHitTesting(false)
-            )
-    }
-
-    /// 正面立绘 + 全息镭射光影层（只在翻过 90° 后可见）
-    private var heroFace: some View {
-        ZStack {
-            AssetImage.image(card.slug)
-                .resizable()
-                .scaledToFill()
-            HoloShine(nx: holoTiltY / 24, ny: holoTiltX / 24, active: revealShown)
-                .opacity(revealShown ? 1 : 0)
-            glaze
-        }
-        .frame(width: cardWidth, height: cardHeight)
-        .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
-        .allowsHitTesting(true)
-    }
-
-    /// 卡面清漆：边缘高光 + 顶部光泽
-    private var glaze: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .strokeBorder(
-                    LinearGradient(colors: [.white.opacity(0.5), .white.opacity(0.12)], startPoint: .top, endPoint: .bottom),
-                    lineWidth: 1
-                )
-            LinearGradient(colors: [.white.opacity(0.2), .clear], startPoint: .top, endPoint: UnitPoint(x: 0.5, y: 0.2))
-        }
-    }
-
-    /// 揭晓后拖动主牌：卡身倾斜 + 驱动全息层反光流动
-    private var holoGesture: some Gesture {
-        DragGesture(minimumDistance: 12)
-            .onChanged { value in
-                guard phase == .revealed else { return }
-                holoDrag = value.translation
-            }
-            .onEnded { _ in
-                withAnimation(.spring(response: 0.55, dampingFraction: 0.75)) {
-                    holoDrag = .zero
-                }
-            }
-    }
-
-    private var holoTiltY: Double {
-        guard phase == .revealed else { return 0 }
-        return Double(max(-10, min(10, holoDrag.width * 0.07)))
-    }
-
-    private var holoTiltX: Double {
-        guard phase == .revealed else { return 0 }
-        return Double(max(-8, min(8, -holoDrag.height * 0.06)))
-    }
-
-    // MARK: - 翻牌：0° → 90°（临界切换）→ 180°，过 90° 瞬间触发全屏彩带 + 揭晓文字
-
-    private func startFlip() {
-        withAnimation(.easeInOut(duration: 0.32)) {
-            flipAngle = 90
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.33) {
-            // ★ 主牌翻过 90° 的瞬间：全屏彩带 + 揭晓文字 + 进入 revealed
-            confettiToken += 1
-            withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
-                revealShown = true
-                phase = .revealed
-            }
-            withAnimation(.spring(response: 0.85, dampingFraction: 0.82)) {
-                flipAngle = 180
-            }
-        }
+    private var spreadReversed: (past: Bool, present: Bool, future: Bool) {
+        (
+            draw?.isReversed2 ?? false,
+            draw?.isReversed ?? false,
+            draw?.isReversed3 ?? false
+        )
     }
 
     // MARK: - 生命周期
@@ -595,11 +560,11 @@ struct TarotView: View {
         draw = today
         isRedraw = false
         if today.isOpened {
-            // 今天已拆过：直接进入揭晓态，无彩带
-            phase = .revealed
-            fanSpread = true
-            flipAngle = 180
-            revealShown = true
+            // 今天已选过牌：直接进入三牌阵且全部翻开，无彩带
+            phase = .spreadRevealed
+            loadedOpened = true
+            revealedCount = 3
+            spreadSettled = true
         } else {
             phase = .sealed
             tearProgress = 0
@@ -608,19 +573,25 @@ struct TarotView: View {
         }
     }
 
-    /// 重新抽：立即清空牌面与文字并切回 sealed 展示密封卡包；
-    /// 新塔罗牌的随机抽取延迟到撕包动作完成（finishTear → TarotService.redraw）
+    /// 重新抽：立即清空已选数组/翻牌/文字/粒子，以无重影状态切回 sealed；
+    /// 只把记录标记为未拆（首页继续显示旧牌阵的中央牌，不剧透），
+    /// 新牌池在撕包后进入牌轮时重新洗牌，选满 3 张时由 commitSpread 落库
     private func redraw() {
-        guard phase == .revealed else { return }
+        guard phase == .spreadRevealed else { return }
         isRedraw = true
-        // 只把记录标记为未拆（牌面数据不动，首页继续显示旧牌，不剧透）
         if let draw {
             TarotService.markUnopened(draw, in: context)
         }
-        // 同步清空一切揭晓态（此刻均不可见，直接赋值）
-        flipAngle = 0
-        revealShown = false
-        fanSpread = false
+        clearToken += 1          // 清空粒子状态（不触发新的发射）
+        selectedSlots = []
+        pool = []
+        poolReversed = []
+        wheelAngle = 0
+        wheelBorn = false
+        flipAllToken = 0
+        revealedCount = 0
+        spreadSettled = false
+        loadedOpened = false
         tearProgress = 0
         tearStarted = false
         stripFlying = false
@@ -630,8 +601,8 @@ struct TarotView: View {
         stripFlyY = 0
         stripFlyRotation = 0
         stripFlyOpacity = 1
-        packDropped = false
-        holoDrag = .zero
+        packRecoil = false
+        holoReset()
         deform = 0
         packTilt = .zero
         jag = TarotView.makeJag()
@@ -640,7 +611,9 @@ struct TarotView: View {
         }
     }
 
-    /// 每次装包生成一条新的不规则撕裂线：斜率 + 弓形 + 随机游走 + 锯齿（移植自 ref path()，96 段精简为 56 段）
+    private func holoReset() { /* RevealCard 内部状态随分支卸载自动重置，此处保留语义占位 */ }
+
+    /// 每次装包生成一条新的不规则撕裂线：斜率 + 弓形 + 随机游走 + 锯齿
     static func makeJag() -> [CGFloat] {
         let segments = 56
         let slope = CGFloat.random(in: -2.5...2.5)
@@ -658,36 +631,318 @@ struct TarotView: View {
     }
 }
 
-// MARK: - 扇形牌位
+// MARK: - 卡包退场过渡（原地下移 40pt + 缩小 0.88 + 快速渐隐）
 
-private struct FanPose {
-    let x: CGFloat
-    let y: CGFloat
-    let angle: Double
-    let scale: CGFloat
-    let opacity: Double
+struct PackExitModifier: ViewModifier, Animatable {
+    var progress: CGFloat
 
-    /// 叠合状态：从卡包口（中心下方）抽出
-    static let stacked = FanPose(x: 0, y: 96, angle: 0, scale: 0.86, opacity: 0)
+    var animatableData: CGFloat {
+        get { progress }
+        set { progress = newValue }
+    }
 
-    static func fan(_ index: Int) -> FanPose {
-        switch index {
-        case -2: FanPose(x: -112, y: 18, angle: -15, scale: 0.9, opacity: 0.85)
-        case -1: FanPose(x: -64, y: 8, angle: -7.5, scale: 0.95, opacity: 0.95)
-        case 1: FanPose(x: 64, y: 8, angle: 7.5, scale: 0.95, opacity: 0.95)
-        default: FanPose(x: 112, y: 18, angle: 15, scale: 0.9, opacity: 0.85)
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(1 - 0.12 * progress)
+            .offset(y: 40 * progress)
+            .opacity(Double(1 - progress))
+    }
+}
+
+extension AnyTransition {
+    static var packExit: AnyTransition {
+        .modifier(active: PackExitModifier(progress: 1), identity: PackExitModifier(progress: 0))
+    }
+}
+
+// MARK: - 环形牌轮（TarotWheelView）
+
+/// 偏移式极坐标环形牌轮：
+/// - 圆心 (0.82w, 0.54h)，半径 0.68w，22 个牌位按 360°/22 ≈ 16.36° 等分，slot 0 初始位于正左（180°）拇指热区
+/// - 每张牌背 64×96，沿径向旋转（ Roulette 造型），点选后沿圆心法线外弹 28pt + scale 1.12 并锁定
+/// - 单手上下拖动旋转牌轮（dy→角度线性映射），松手带惯性（easeOut 衰减滑行）
+struct TarotWheelView: View {
+    let pool: [Int]
+    let poolReversed: [Bool]
+    let selectedSlots: [Int]
+    @Binding var wheelAngle: Double
+    var onSelect: (Int) -> Void
+
+    @State private var prevDragY: CGFloat?
+    @State private var lastMoveTime: Date?
+    @State private var angularVelocity: Double = 0
+
+    private let slotCount = 22
+    private let wheelCardWidth: CGFloat = 64
+    private let wheelCardHeight: CGFloat = 96
+
+    var body: some View {
+        GeometryReader { geo in
+            let center = CGPoint(x: geo.size.width * 0.82, y: geo.size.height * 0.54)
+            let radius = geo.size.width * 0.68
+            ZStack {
+                ForEach(0..<slotCount, id: \.self) { slot in
+                    if slot < pool.count {
+                        wheelCard(slot: slot, center: center, radius: radius)
+                    }
+                }
+            }
+            .frame(width: geo.size.width, height: geo.size.height)
+            .contentShape(Rectangle())
+            .gesture(spinGesture)
+        }
+    }
+
+    private func angleDeg(slot: Int) -> Double {
+        180.0 + Double(slot) * (360.0 / Double(slotCount)) + wheelAngle
+    }
+
+    @ViewBuilder
+    private func wheelCard(slot: Int, center: CGPoint, radius: CGFloat) -> some View {
+        let theta = angleDeg(slot: slot) * .pi / 180
+        let ux = CGFloat(cos(theta))
+        let uy = CGFloat(sin(theta))
+        let order = selectedSlots.firstIndex(of: slot)
+        let isSelected = order != nil
+        let radialOffset: CGFloat = isSelected ? 28 : 0
+
+        AssetImage.image("back")
+            .resizable()
+            .scaledToFill()
+            .frame(width: wheelCardWidth, height: wheelCardHeight)
+            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .strokeBorder(Color.white.opacity(isSelected ? 0.9 : 0.22), lineWidth: isSelected ? 1.5 : 0.8)
+            )
+            .overlay(alignment: .topTrailing) {
+                if let order {
+                    Text("\(order + 1)")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(Color.black)
+                        .frame(width: 18, height: 18)
+                        .background(Circle().fill(Color.white))
+                        .offset(x: 7, y: -7)
+                }
+            }
+            .shadow(color: .black.opacity(0.25), radius: 6, y: 4)
+            .rotationEffect(.degrees(angleDeg(slot: slot)))
+            .scaleEffect(isSelected ? 1.12 : 1)
+            .offset(x: ux * radialOffset, y: uy * radialOffset)
+            .position(x: center.x + radius * ux, y: center.y + radius * uy)
+            .zIndex(isSelected ? 2 : 1)
+            .onTapGesture { onSelect(slot) }
+    }
+
+    /// 单手上下拖动：dy 线性映射角度；松手按角速度惯性滑行（easeOut 衰减）
+    private var spinGesture: some Gesture {
+        DragGesture(minimumDistance: 10)
+            .onChanged { value in
+                let now = Date()
+                if let prevY = prevDragY, let lastTime = lastMoveTime {
+                    let dy = value.translation.height - prevY
+                    let dAngle = Double(dy) * 0.33
+                    wheelAngle += dAngle
+                    let dt = max(0.008, now.timeIntervalSince(lastTime))
+                    let instant = dAngle / dt
+                    angularVelocity = angularVelocity * 0.72 + instant * 0.28
+                }
+                prevDragY = value.translation.height
+                lastMoveTime = now
+            }
+            .onEnded { _ in
+                let fling = max(-700, min(700, angularVelocity)) * 0.32
+                withAnimation(.easeOut(duration: 0.9)) {
+                    wheelAngle += fling
+                }
+                prevDragY = nil
+                lastMoveTime = nil
+                angularVelocity = 0
+            }
+    }
+}
+
+// MARK: - 三牌阵单卡（RevealCard）
+
+/// 单张揭晓卡：位置标签 + 翻牌卡面 + 逐牌文字门控。
+/// 翻牌两段式：0→90°（easeInOut 确定过临界），90° 帧切换正反面/触发回调，90→180° 弹簧落定；
+/// 阴影透明度绑定 abs(cos(angle))，90° 垂直瞬间为 0；翻开后支持拖拽倾斜驱动全息层。
+struct RevealCard: View {
+    let index: Int
+    let positionLabel: String
+    let card: TarotCard
+    let reversed: Bool
+    let initiallyRevealed: Bool
+    let flipAllTrigger: Int
+    var onNinety: () -> Void = {}
+    var onFlipped: () -> Void = {}
+    var onOpen: () -> Void = {}
+
+    @State private var angle: Double
+    @State private var revealed: Bool
+    @State private var handledTrigger: Int
+    @State private var holoDrag: CGSize = .zero
+
+    init(
+        index: Int, positionLabel: String, card: TarotCard, reversed: Bool,
+        initiallyRevealed: Bool, flipAllTrigger: Int,
+        onNinety: @escaping () -> Void = {}, onFlipped: @escaping () -> Void = {}, onOpen: @escaping () -> Void = {}
+    ) {
+        self.index = index
+        self.positionLabel = positionLabel
+        self.card = card
+        self.reversed = reversed
+        self.initiallyRevealed = initiallyRevealed
+        self.flipAllTrigger = flipAllTrigger
+        self.onNinety = onNinety
+        self.onFlipped = onFlipped
+        self.onOpen = onOpen
+        _angle = State(initialValue: initiallyRevealed ? 180 : 0)
+        _revealed = State(initialValue: initiallyRevealed)
+        _handledTrigger = State(initialValue: flipAllTrigger)
+    }
+
+    private let cardWidth: CGFloat = 106
+    private let cardHeight: CGFloat = 160
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Text(positionLabel)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Theme.textTertiary)
+                .tracking(1)
+
+            cardFace
+
+            VStack(spacing: 4) {
+                HStack(alignment: .firstTextBaseline, spacing: 5) {
+                    Text(card.name)
+                        .font(.system(size: 13.5, weight: .semibold))
+                        .foregroundStyle(Theme.text)
+                    Text(reversed ? "逆位" : "正位")
+                        .font(.system(size: 9.5, weight: .medium))
+                        .foregroundStyle(Theme.textTertiary)
+                }
+                Text(card.keywords(reversed: reversed).joined(separator: " · "))
+                    .font(.system(size: 10))
+                    .foregroundStyle(Theme.textTertiary)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+            }
+            .opacity(revealed ? 1 : 0)
+            .offset(y: revealed ? 0 : 10)
+            .animation(.spring(response: 0.5, dampingFraction: 0.8).delay(0.05), value: revealed)
+        }
+        .frame(width: cardWidth)
+        .onChange(of: flipAllTrigger) { _, newValue in
+            guard newValue != handledTrigger else { return }
+            handledTrigger = newValue
+            guard angle < 90 else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + Double(index) * 0.18) {
+                startFlip()
+            }
+        }
+    }
+
+    private var cardFace: some View {
+        ZStack {
+            AssetImage.image("back")
+                .resizable()
+                .scaledToFill()
+                .frame(width: cardWidth, height: cardHeight)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .modifier(FaceGate(angle: angle, front: false, shadowOpacity: 0.32))
+
+            ZStack {
+                AssetImage.image(card.slug)
+                    .resizable()
+                    .scaledToFill()
+                HoloShine(nx: holoTiltY / 24, ny: holoTiltX / 24, active: revealed)
+                    .opacity(revealed ? 1 : 0)
+                glaze
+            }
+            .frame(width: cardWidth, height: cardHeight)
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .rotation3DEffect(.degrees(180), axis: (x: 0, y: 1, z: 0))
+            .modifier(FaceGate(angle: angle, front: true, shadowOpacity: 0.32))
+        }
+        .frame(width: cardWidth, height: cardHeight)
+        .rotation3DEffect(.degrees(holoTiltX), axis: (x: 1, y: 0, z: 0), perspective: 0.68)
+        .rotation3DEffect(.degrees(holoTiltY), axis: (x: 0, y: 1, z: 0), perspective: 0.68)
+        .rotation3DEffect(.degrees(angle), axis: (x: 0, y: 1, z: 0), perspective: 0.55)
+        .onTapGesture {
+            if angle >= 180 {
+                onOpen()
+            } else if angle < 90 {
+                startFlip()
+            }
+        }
+        .simultaneousGesture(holoGesture)
+    }
+
+    /// 卡面清漆：边缘高光 + 顶部光泽
+    private var glaze: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(
+                    LinearGradient(colors: [.white.opacity(0.5), .white.opacity(0.12)], startPoint: .top, endPoint: .bottom),
+                    lineWidth: 1
+                )
+            LinearGradient(colors: [.white.opacity(0.2), .clear], startPoint: .top, endPoint: UnitPoint(x: 0.5, y: 0.2))
+        }
+    }
+
+    private var holoGesture: some Gesture {
+        DragGesture(minimumDistance: 12)
+            .onChanged { value in
+                guard revealed else { return }
+                holoDrag = value.translation
+            }
+            .onEnded { _ in
+                withAnimation(.spring(response: 0.55, dampingFraction: 0.75)) {
+                    holoDrag = .zero
+                }
+            }
+    }
+
+    private var holoTiltY: Double {
+        guard revealed else { return 0 }
+        return Double(max(-10, min(10, holoDrag.width * 0.07)))
+    }
+
+    private var holoTiltX: Double {
+        guard revealed else { return 0 }
+        return Double(max(-8, min(8, -holoDrag.height * 0.06)))
+    }
+
+    private func startFlip() {
+        guard angle < 90 else { return }
+        withAnimation(.easeInOut(duration: 0.3)) {
+            angle = 90
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.31) {
+            // ★ 翻过 90° 的瞬间：全屏彩带 + 该牌文字弹簧淡入
+            onNinety()
+            onFlipped()
+            withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
+                revealed = true
+            }
+            withAnimation(.spring(response: 0.85, dampingFraction: 0.82)) {
+                angle = 180
+            }
         }
     }
 }
 
 // MARK: - 90° 防穿帮翻转
 
-/// AnimatableModifier 在动画的每一帧用插值后的角度重算可见性：
-/// 牌背在角度 < 90° 时可见，正面立绘在角度 ≥ 90° 的那一帧才显示，
-/// 配合正面预置 180° Y 轴旋转完成镜像修正，翻转中途永不透出。
+/// Animatable 修饰器在动画每一帧用插值后的角度重算可见性与阴影：
+/// - 牌背在角度 < 90° 可见，正面立绘在角度 ≥ 90° 的那一帧才显示（正面已预置 180° 镜像修正）
+/// - 阴影透明度 = shadowOpacity · abs(cos(angle))，90° 垂直瞬间降为 0，消除黑色竖线
 private struct FaceGate: ViewModifier, Animatable {
     var angle: Double
     var front: Bool
+    var shadowOpacity: Double
 
     var animatableData: Double {
         get { angle }
@@ -696,13 +951,102 @@ private struct FaceGate: ViewModifier, Animatable {
 
     func body(content: Content) -> some View {
         let faceUp = angle >= 90
-        content.opacity((front == faceUp) ? 1 : 0)
+        let lift = abs(cos(angle * .pi / 180))
+        content
+            .shadow(color: .black.opacity(shadowOpacity * lift), radius: 12, y: 7)
+            .opacity((front == faceUp) ? 1 : 0)
+    }
+}
+
+// MARK: - 牌阵解读
+
+/// 三牌阵解读弹窗：左·过去 / 中·现在 / 右·未来
+struct TarotSpreadSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let past: TarotCard
+    let present: TarotCard
+    let future: TarotCard
+    let reversedPast: Bool
+    let reversedPresent: Bool
+    let reversedFuture: Bool
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 16) {
+                    HStack(alignment: .top, spacing: 10) {
+                        spreadMini(title: "过去", card: past, reversed: reversedPast)
+                        spreadMini(title: "现在", card: present, reversed: reversedPresent)
+                        spreadMini(title: "未来", card: future, reversed: reversedFuture)
+                    }
+
+                    spreadSection(title: "过去 · \(past.name)", en: past.en, reversed: reversedPast, card: past)
+                    spreadSection(title: "现在 · \(present.name)", en: present.en, reversed: reversedPresent, card: present)
+                    spreadSection(title: "未来 · \(future.name)", en: future.en, reversed: reversedFuture, card: future)
+                }
+                .padding(.horizontal, Theme.screenPadding)
+                .padding(.vertical, 16)
+            }
+            .background(Theme.bg)
+            .navigationTitle("牌阵解读")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("完成") { dismiss() }.foregroundStyle(Theme.text)
+                }
+            }
+            .tint(Theme.text)
+        }
+        .presentationBackground(Theme.bg)
+    }
+
+    private func spreadMini(title: String, card: TarotCard, reversed: Bool) -> some View {
+        VStack(spacing: 6) {
+            CardArt(name: card.slug)
+                .frame(width: 92, height: 136)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            Text(title)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Theme.textTertiary)
+            Text("\(card.name) · \(reversed ? "逆位" : "正位")")
+                .font(.system(size: 10.5))
+                .foregroundStyle(Theme.textSecondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func spreadSection(title: String, en: String, reversed: Bool, card: TarotCard) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(title)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Theme.text)
+                Text(en)
+                    .font(.system(size: 11, design: .serif))
+                    .foregroundStyle(Theme.textTertiary)
+            }
+            HStack(spacing: 6) {
+                ForEach(card.keywords(reversed: reversed), id: \.self) { keyword in
+                    AccentChip(text: keyword)
+                }
+            }
+            Text(card.text(reversed: reversed))
+                .font(.system(size: 13))
+                .lineSpacing(5)
+                .foregroundStyle(Theme.textSecondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .multilineTextAlignment(.leading)
+                .cardSurface()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
 // MARK: - 全息镭射光影层（Holo Shader）
 
-/// 全息素材：阈值化闪粉噪点（对应 ref --glitter：feTurbulence + feColorMatrix 阈值切白点）
+/// 全息素材：阈值化闪粉噪点（对应 holo-reverse --glitter 的遮罩思路）
 enum HoloAssets {
     static let glitter: UIImage = {
         let side: CGFloat = 420
@@ -723,8 +1067,7 @@ enum HoloAssets {
         }
     }()
 
-    /// 多色斜向循环渐变（对应 ref --rainbow：repeating-linear-gradient(110deg, ...)，
-    /// 16 个循环保证主牌视窗内始终有 4 条以上色带可供流动）
+    /// 多色斜向循环渐变（对应 --rainbow：110° 循环色带）
     static let rainbow: Gradient = {
         let palette: [Color] = [
             Color(hex: 0xFF7AA8), Color(hex: 0xFFCF6B), Color(hex: 0xA8FF8A),
@@ -741,12 +1084,11 @@ enum HoloAssets {
     }()
 }
 
-/// 全息反光层：随倾斜 nx/ny（-1...1）流动。公式对应 ref：
-/// --px = 50 + nx·50，--py = 50 - ny·50，hyp = min(1, hypot(nx, ny))
+/// 全息反光层：随倾斜 nx/ny（-1...1）流动。
+/// px = 0.5 + nx·0.5，py = 0.5 - ny·0.5，hyp = min(1, hypot(nx, ny))
 struct HoloShine: View {
     var nx: CGFloat
     var ny: CGFloat
-    /// 静置流光只在揭晓后运行，避免空转
     var active: Bool
 
     var body: some View {
@@ -755,8 +1097,8 @@ struct HoloShine: View {
             let idleX = sin(t * 0.55) * 0.14
             let idleY = cos(t * 0.42) * 0.1
             shine(
-                nx: max(-1, min(1, nx + idleX)),
-                ny: max(-1, min(1, ny + idleY))
+                nx: max(-1, min(1, nx + CGFloat(idleX))),
+                ny: max(-1, min(1, ny + CGFloat(idleY)))
             )
         }
         .allowsHitTesting(false)
@@ -770,7 +1112,7 @@ struct HoloShine: View {
             let py = 0.5 - ny * 0.5
             let hyp = min(1, sqrt(nx * nx + ny * ny))
             ZStack {
-                // 彩虹层：400% 幅面的斜向循环渐变，位置随倾斜流动（110° 方向：CSS y-up → SwiftUI y-down）
+                // 彩虹层：400% 幅面的斜向循环渐变，位置随倾斜流动
                 LinearGradient(
                     gradient: HoloAssets.rainbow,
                     startPoint: UnitPoint(x: 0.03, y: 0.33),
@@ -782,12 +1124,12 @@ struct HoloShine: View {
                     .brightness(-0.22)
                     .blendMode(.colorDodge)
                     .opacity(0.26 + hyp * 0.5)
-                // 闪粉噪点层（ref: --glitter 遮罩 + brightness(1.8)）
+                // 闪粉噪点层
                 Image(uiImage: HoloAssets.glitter)
                     .resizable()
                     .blendMode(.plusLighter)
                     .opacity(0.16 + hyp * 0.3)
-                // 镜面炫光（ref: --glare 径向高光 + overlay）
+                // 镜面炫光
                 RadialGradient(
                     colors: [.white.opacity(0.85), .white.opacity(0.14), .black.opacity(0.22)],
                     center: UnitPoint(x: px, y: py),
@@ -818,7 +1160,6 @@ struct TornEdge: Shape {
     func path(in rect: CGRect) -> Path {
         let cut = rect.height * ratio * progress
         let segments = max(1, jitter.count - 1)
-        // 未撕开时锯齿幅度归零，保证与素材撕裂线完全重合
         let amp = max(0, min(1, progress * 4))
         var path = Path()
         var first = true
@@ -848,7 +1189,7 @@ struct TornEdge: Shape {
 // MARK: - 全屏彩带粒子（Canvas + TimelineView）
 
 /// 粒子物理存储：Canvas 逐帧积分，不走 SwiftUI 状态，避免每帧视图重建。
-/// 物理直接移植自 holo-reverse 的 bits：重力 2600、隐式阻力、侧滑、翻滚压扁。
+/// 物理：重力 2600pt/s²、隐式阻力、翻滚侧滑、翻滚透视压扁。
 final class ConfettiStore {
     struct Bit {
         let kind: Int          // 0 圆点 / 1 彩带 / 2 星尘
@@ -876,7 +1217,7 @@ final class ConfettiStore {
     var bits: [Bit] = []
     var last: Date?
 
-    /// 全屏爆发：横向 6%~94% 均匀散布，七彩+白，三层延迟错峰
+    /// 全屏爆发：横向 6%~94% 均匀散布，七彩+白，错峰延迟
     func launch() {
         let colors: [Color] = [
             Color(hex: 0xFF3D6E), Color(hex: 0xFF8A3D), Color(hex: 0xFFD34D),
@@ -906,6 +1247,12 @@ final class ConfettiStore {
         last = nil
     }
 
+    /// 清空粒子（重新抽时调用，不触发新的发射）
+    func clear() {
+        bits = []
+        last = nil
+    }
+
     func step(dt: Double, height: CGFloat) {
         var alive: [Bit] = []
         alive.reserveCapacity(bits.count)
@@ -921,10 +1268,8 @@ final class ConfettiStore {
                 b.vx = sin(b.angle) * b.speed
                 b.vy = -cos(b.angle) * b.speed
             }
-            // 重力 + 翻滚侧滑（ref: vy += 2600·dt; vx += (sin(ph)·slip + glide)·dt）
             b.vy += 2600 * dt
             b.vx += (sin(b.ph) * b.slip + b.glide) * dt
-            // 隐式阻力（一簇纸片先整体冲出，再各自进入终端速度，保证不反向过冲）
             let v = sqrt(b.vx * b.vx + b.vy * b.vy)
             let dragK = 1 / (1 + b.c * min(1, 0.06 + t / 0.45) * v * dt)
             b.vx *= dragK
@@ -934,7 +1279,6 @@ final class ConfettiStore {
             let turn = 0.35 + v / 800
             b.rot += b.spin * turn * dt
             b.ph += 7 * turn * dt
-            // 落出屏幕底部或寿命到期后回收
             if height * b.ry + b.y < height + 80, t < 3.2 {
                 alive.append(b)
             }
@@ -959,6 +1303,7 @@ final class ConfettiStore {
 
 struct ConfettiOverlay: View {
     let token: Int
+    var clearToken: Int = 0
 
     @State private var store = ConfettiStore()
 
@@ -978,6 +1323,9 @@ struct ConfettiOverlay: View {
         .onChange(of: token) { _, _ in
             store.launch()
         }
+        .onChange(of: clearToken) { _, _ in
+            store.clear()
+        }
     }
 
     private func draw(_ bit: ConfettiStore.Bit, into ctx: inout GraphicsContext, size: CGSize) {
@@ -989,7 +1337,6 @@ struct ConfettiOverlay: View {
         var c = ctx
         c.translateBy(x: size.width * bit.rx + bit.x, y: size.height * bit.ry + bit.y)
         c.rotate(by: .degrees(bit.rot))
-        // 翻滚透视压扁（ref: cq = cos((rot - rot0)·0.7°)）
         let cq = abs(cos((bit.rot - bit.rot0) * 0.7 * .pi / 180))
         c.scaleBy(x: bit.sc, y: bit.sc * max(0.18, cq))
         c.opacity = alpha
@@ -1007,80 +1354,36 @@ struct ConfettiOverlay: View {
 // MARK: - 素材加载
 
 /// SwiftUI 的 Image("name") 找不到直接扔进 bundle 的松散文件（webp/png），
-/// 这里走 Bundle.url + UIImage(contentsOfFile:) 显式加载。
+/// 这里走 Bundle.url + UIImage(contentsOfFile:) 显式加载，并做进程内缓存
+/// （环形牌轮 22 张牌背同帧重排，必须复用解码结果）。
 enum AssetImage {
+    private static var cache: [String: UIImage] = [:]
+
     static func ui(_ name: String) -> UIImage? {
-        if let image = UIImage(named: name) { return image }
-        for ext in ["png", "webp", "jpg", "jpeg"] {
-            if let url = Bundle.main.url(forResource: name, withExtension: ext),
-               let image = UIImage(contentsOfFile: url.path) {
-                return image
+        if let hit = cache[name] { return hit }
+        var loaded: UIImage?
+        if let image = UIImage(named: name) {
+            loaded = image
+        } else {
+            for ext in ["png", "webp", "jpg", "jpeg"] {
+                if let url = Bundle.main.url(forResource: name, withExtension: ext),
+                   let image = UIImage(contentsOfFile: url.path) {
+                    loaded = image
+                    break
+                }
             }
         }
-        AppLog.warn("素材缺失：\(name)")
-        return nil
+        if loaded == nil {
+            AppLog.warn("素材缺失：\(name)")
+        } else {
+            cache[name] = loaded
+        }
+        return loaded
     }
 
     static func image(_ name: String) -> Image {
         if let ui = ui(name) { return Image(uiImage: ui) }
         return Image(systemName: "rectangle.dashed")
-    }
-}
-
-// MARK: - 牌义
-
-struct TarotReadingSheet: View {
-    @Environment(\.dismiss) private var dismiss
-    let card: TarotCard
-    let isReversed: Bool
-
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 14) {
-                    CardArt(name: card.slug)
-                        .frame(width: 168, height: 250)
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text(card.name).font(.system(size: 21, weight: .semibold))
-                            .foregroundStyle(Theme.text)
-                        Text(card.en).font(.system(size: 12, design: .serif))
-                            .foregroundStyle(Theme.textTertiary)
-                    }
-
-                    Text("\(card.positionText(reversed: isReversed)) · 大阿尔卡纳 \(card.roman)")
-                        .font(.system(size: 11.5))
-                        .foregroundStyle(Theme.textTertiary)
-
-                    HStack(spacing: 6) {
-                        ForEach(card.keywords(reversed: isReversed), id: \.self) { keyword in
-                            AccentChip(text: keyword)
-                        }
-                    }
-
-                    Text(card.text(reversed: isReversed))
-                        .font(.system(size: 13))
-                        .lineSpacing(5)
-                        .foregroundStyle(Theme.textSecondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .multilineTextAlignment(.leading)
-                        .cardSurface()
-                }
-                .padding(.horizontal, Theme.screenPadding)
-                .padding(.vertical, 16)
-            }
-            .background(Theme.bg)
-            .navigationTitle("牌义")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("完成") { dismiss() }.foregroundStyle(Theme.text)
-                }
-            }
-            .tint(Theme.text)
-        }
-        .presentationBackground(Theme.bg)
     }
 }
 
@@ -1109,13 +1412,7 @@ struct CardArt: View {
     }
 
     static func load(_ name: String) -> UIImage? {
-        if let image = UIImage(named: name) { return image }
-        for ext in ["webp", "png", "jpg"] {
-            if let url = Bundle.main.url(forResource: name, withExtension: ext),
-               let image = UIImage(contentsOfFile: url.path) {
-                return image
-            }
-        }
-        return nil
+        AssetImage.ui(name)
     }
 }
+
