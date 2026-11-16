@@ -212,7 +212,8 @@ enum TarotService {
         return draw
     }
 
-    /// 重新抽：覆盖今天那条记录
+    /// 重新抽：随机换一张新牌并落库。只在用户撕包动作完成后由 TarotView 调用，
+    /// 保证“重新抽一张”绝不会提前渲染新牌背或新结果文字。
     static func redraw(_ draw: DailyTarot, in context: ModelContext) {
         var next = draw.cardID
         while next == draw.cardID {
@@ -220,9 +221,18 @@ enum TarotService {
         }
         draw.cardID = next
         draw.isReversed = Bool.random()
-        draw.isOpened = false
+        // 换牌绑定发生在撕包完成的同一时刻，牌直接记为已拆
+        draw.isOpened = true
         draw.drawnAt = Date()
         try? context.save()
         AppLog.info("重新抽牌：\(draw.card.name) \(draw.isReversed ? "逆位" : "正位")")
+    }
+
+    /// 重新抽第一步：只把今天这条标记为未拆封，牌面数据保持不变——
+    /// 首页塔罗小卡继续显示旧牌（不剧透），塔罗页切回 sealed 展示密封卡包；
+    /// 真正的随机换牌在用户完成撕包动作后由 redraw(_:in:) 执行。
+    static func markUnopened(_ draw: DailyTarot, in context: ModelContext) {
+        draw.isOpened = false
+        try? context.save()
     }
 }
