@@ -753,6 +753,14 @@ struct PhysicalCardBackView: View {
     @State private var tilt: CGSize = .zero
     @State private var pressing = false
 
+    private var tiltXDegrees: Double {
+        max(-7.0, min(7.0, Double(-tilt.height) * 0.14))
+    }
+
+    private var tiltYDegrees: Double {
+        max(-7.0, min(7.0, Double(tilt.width) * 0.14))
+    }
+
     var body: some View {
         ZStack {
             // 三层微错位厚卡纸边（深金 / 卡纸 / 象牙）
@@ -770,14 +778,8 @@ struct PhysicalCardBackView: View {
                 )
         }
         .shadow(color: .black.opacity(0.30), radius: 7, y: 5)
-        .rotation3DEffect(
-            .degrees(max(-7, min(7, -tilt.height * 0.14))),
-            axis: (x: 1, y: 0, z: 0), perspective: 0.7
-        )
-        .rotation3DEffect(
-            .degrees(max(-7, min(7, tilt.width * 0.14))),
-            axis: (x: 0, y: 1, z: 0), perspective: 0.7
-        )
+        .rotation3DEffect(.degrees(tiltXDegrees), axis: (x: 1, y: 0, z: 0), perspective: 0.7)
+        .rotation3DEffect(.degrees(tiltYDegrees), axis: (x: 0, y: 1, z: 0), perspective: 0.7)
         .scaleEffect(pressing ? 1.03 : 1)
         .animation(.spring(response: 0.3, dampingFraction: 0.65), value: pressing)
         .gesture(
@@ -816,34 +818,48 @@ struct PhysicalCardBackView: View {
 struct FingerprintGuide: View {
     var visible: Bool
 
+    private let gold = Color(hex: 0xD4AF37)
+
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 24.0, paused: !visible)) { timeline in
-            let t = timeline.date.timeIntervalSinceReferenceDate
-            let breathe = 0.5 + 0.5 * sin(t * 2.4)
-            ZStack(alignment: .leading) {
-                // 呼吸微光环
-                Circle()
-                    .stroke(Color(hex: 0xD4AF37).opacity(0.55), lineWidth: 1.2)
-                    .frame(width: 34, height: 34)
-                    .scaleEffect(1 + breathe * 0.10)
-                    .opacity(0.35 + breathe * 0.40)
-                // 指纹图标
-                Image(systemName: "touchid")
-                    .font(.system(size: 19))
-                    .foregroundStyle(Color(hex: 0xD4AF37).opacity(0.92))
-                // 向右滑动粒子拖尾
-                ForEach(0..<3, id: \.self) { i in
-                    Circle()
-                        .fill(Color(hex: 0xD4AF37).opacity(0.50 - Double(i) * 0.13))
-                        .frame(width: CGFloat(3.5 - Double(i) * 0.8), height: CGFloat(3.5 - Double(i) * 0.8))
-                        .offset(x: 22 + CGFloat(i) * 9 + sin(t * 2.2 + Double(i) * 1.3) * 3.5)
-                }
-            }
+            fingerprintBody(t: timeline.date.timeIntervalSinceReferenceDate)
         }
         .opacity(visible ? 1 : 0)
         .scaleEffect(visible ? 1 : 0.55)
         .animation(.easeOut(duration: 0.15), value: visible)
         .allowsHitTesting(false)
+    }
+
+    private func fingerprintBody(t: Double) -> some View {
+        let breatheRaw = 0.5 + 0.5 * sin(t * 2.4)
+        let ringScale = 1.0 + breatheRaw * 0.10
+        let ringOpacity = 0.35 + breatheRaw * 0.40
+        let dotX1 = 22.0 + sin(t * 2.2) * 3.5
+        let dotX2 = 31.0 + sin(t * 2.2 + 1.3) * 3.5
+        let dotX3 = 40.0 + sin(t * 2.2 + 2.6) * 3.5
+        return ZStack(alignment: .leading) {
+            // 呼吸微光环
+            Circle()
+                .stroke(gold.opacity(0.55), lineWidth: 1.2)
+                .frame(width: 34, height: 34)
+                .scaleEffect(CGFloat(ringScale))
+                .opacity(ringOpacity)
+            // 指纹图标
+            Image(systemName: "touchid")
+                .font(.system(size: 19))
+                .foregroundStyle(gold.opacity(0.92))
+            // 向右滑动粒子拖尾
+            trailDot(x: dotX1, size: 3.5, alpha: 0.50)
+            trailDot(x: dotX2, size: 2.7, alpha: 0.37)
+            trailDot(x: dotX3, size: 1.9, alpha: 0.24)
+        }
+    }
+
+    private func trailDot(x: Double, size: Double, alpha: Double) -> some View {
+        Circle()
+            .fill(gold.opacity(alpha))
+            .frame(width: size, height: size)
+            .offset(x: x)
     }
 }
 
