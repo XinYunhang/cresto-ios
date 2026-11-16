@@ -705,7 +705,7 @@ private struct FaceGate: ViewModifier, Animatable {
 /// 全息素材：阈值化闪粉噪点（对应 ref --glitter：feTurbulence + feColorMatrix 阈值切白点）
 enum HoloAssets {
     static let glitter: UIImage = {
-        let side = 420
+        let side: CGFloat = 420
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
         let renderer = UIGraphicsImageRenderer(size: CGSize(width: side, height: side), format: format)
