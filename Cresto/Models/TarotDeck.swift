@@ -168,16 +168,16 @@ enum TarotDeck {
 final class DailyTarot {
     /// yyyy-MM-dd，一天一条
     var dateKey: String = ""
-    /// 中央位 · 现在（首页塔罗小卡显示这张）
+    /// 上位 · 过去/核心（三角牌阵顶部，首页塔罗小卡显示这张）
     var cardID: Int = 0
-    /// 左位 · 过去
+    /// 下左位 · 现在
     var card2ID: Int = 0
-    /// 右位 · 未来
+    /// 下右位 · 未来
     var card3ID: Int = 0
     var isReversed: Bool = false
     var isReversed2: Bool = false
     var isReversed3: Bool = false
-    /// 今天是否已完成选牌（环形牌轮选满 3 张后由 commitSpread 置位）
+    /// 今天是否已完成选牌（弧形牌扇选满 3 张后由 commitSpread 置位）
     var isOpened: Bool = false
     var drawnAt: Date = Date()
 
@@ -219,28 +219,28 @@ enum TarotService {
         return draw
     }
 
-    /// 三牌阵选满后提交：左·过去 / 中·现在 / 右·未来，一次落库并置为已拆。
-    /// 只在用户完成环形牌轮选牌后调用，保证在此之前不会提前渲染新牌。
+    /// 三牌阵选满后提交：上·过去/核心 / 下左·现在 / 下右·未来，一次落库并置为已拆。
+    /// 只在用户完成弧形牌扇选牌后调用，保证在此之前不会提前渲染新牌。
     static func commitSpread(
         _ draw: DailyTarot, in context: ModelContext,
-        past: Int, present: Int, future: Int,
-        reversedPast: Bool, reversedPresent: Bool, reversedFuture: Bool
+        core: Int, present: Int, future: Int,
+        reversedCore: Bool, reversedPresent: Bool, reversedFuture: Bool
     ) {
-        draw.card2ID = past
-        draw.cardID = present
+        draw.cardID = core
+        draw.card2ID = present
         draw.card3ID = future
-        draw.isReversed2 = reversedPast
-        draw.isReversed = reversedPresent
+        draw.isReversed = reversedCore
+        draw.isReversed2 = reversedPresent
         draw.isReversed3 = reversedFuture
         draw.isOpened = true
         draw.drawnAt = Date()
         try? context.save()
-        AppLog.info("三牌阵已定：过去\(TarotDeck.card(id: past).name) · 现在\(TarotDeck.card(id: present).name) · 未来\(TarotDeck.card(id: future).name)")
+        AppLog.info("三牌阵已定：核心\(TarotDeck.card(id: core).name) · 现在\(TarotDeck.card(id: present).name) · 未来\(TarotDeck.card(id: future).name)")
     }
 
     /// 重新抽第一步：只把今天这条标记为未拆封，牌面数据保持不变——
-    /// 首页塔罗小卡继续显示旧牌阵的中央牌（不剧透），塔罗页切回 sealed 展示密封卡包；
-    /// 新牌阵在用户完成环形牌轮选牌后由 commitSpread(_:in:) 落库。
+    /// 首页塔罗小卡继续显示旧牌阵的核心牌（不剧透），塔罗页切回 sealed 展示密封卡包；
+    /// 新牌阵在用户完成弧形牌扇选牌后由 commitSpread(_:in:) 落库。
     static func markUnopened(_ draw: DailyTarot, in context: ModelContext) {
         draw.isOpened = false
         try? context.save()
