@@ -614,8 +614,8 @@ final class TarotEngine: ObservableObject {
         var underO: Double
     }
     var plyStates: [PlyState] = []
-    var bodyClipFront: [(Double, Double)] = [[0, 0], [100, 0], [100, 100], [0, 100]]
-    var bodyClipBack: [(Double, Double)] = [[0, 0], [100, 0], [100, 100], [0, 100]]
+    var bodyClipFront: [(Double, Double)] = [[0.0, 0.0], [100.0, 0.0], [100.0, 100.0], [0.0, 100.0]]
+    var bodyClipBack: [(Double, Double)] = [[0.0, 0.0], [100.0, 0.0], [100.0, 100.0], [0.0, 100.0]]
     var lipBand: [(Double, Double)] = []
     var flapOrigin = (x: Double(50), y: Double(10.5))
     var flapTilt = (z: Double(0), x: Double(0))
@@ -1834,7 +1834,6 @@ final class HoloSfx {
     private var noiseBuffer: AVAudioPCMBuffer?
     private var foilBuffer: AVAudioPCMBuffer?
     private var ripPlayer: AVAudioPlayerNode?
-    private var ripFilter: AVAudioUnitBiquad?
     private var ripGainNode: AVAudioMixerNode?
     private var started = false
     var muted: Bool = false { didSet { mixer.outputVolume = muted ? 0 : 0.8 } }
@@ -1852,24 +1851,18 @@ final class HoloSfx {
         started = true
         engine.attach(mixer)
         engine.connect(mixer, to: engine.mainMixerNode, format: nil)
-        // 撕箔 loop：噪声 loop → 带通 → 增益
+        // 撕箔 loop：纹理 buffer → 增益（音量随撕速调制）
         let player = AVAudioPlayerNode()
-        let filter = AVAudioUnitBiquad()
-        filter.filterType = .bandPass
-        filter.Q = 0.6
         let gain = AVAudioMixerNode()
         engine.attach(player)
-        engine.attach(filter)
         engine.attach(gain)
         if let foilBuffer, let fmt = foilBuffer.format as AVAudioFormat? {
-            engine.connect(player, to: filter, format: fmt)
-            engine.connect(filter, to: gain, format: fmt)
+            engine.connect(player, to: gain, format: fmt)
             engine.connect(gain, to: mixer, format: fmt)
             player.scheduleBuffer(foilBuffer, at: nil, options: .loops)
             player.play()
         }
         ripPlayer = player
-        ripFilter = filter
         ripGainNode = gain
         gain.volume = 0
         mixer.outputVolume = muted ? 0 : 0.8
@@ -1929,11 +1922,10 @@ final class HoloSfx {
         play(Self.renderAir(from: 3000, to: 2200, q: 0.7, gain: 0.16, attack: 0.003, dur: 0.09, send: 0))
     }
 
-    /// 撕箔 loop 音量/滤波随撕速变化（rip(level)）
+    /// 撕箔 loop 音量随撕速变化（rip(level)）
     func rip(speed: Double) {
         let v = Float(clamp2(speed, 0, 1))
         ripGainNode?.volume = pow(v, 0.8) * 0.15
-        ripFilter?.frequency = Float(1800 + 2000 * v)
     }
 
     private func clamp2(_ v: Double, _ a: Double, _ b: Double) -> Double { min(b, max(a, v)) }
