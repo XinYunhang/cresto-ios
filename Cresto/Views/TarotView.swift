@@ -666,7 +666,7 @@ final class TarotEngine: ObservableObject {
             let lo = d > 0 ? Double(k) * w : max(Double(k) * w, xt)
             let hi = d > 0 ? min(Double(k + 1) * w, xt) : Double(k + 1) * w
             if hi <= lo { continue }
-            let sliceX = Double((nn == 0 ? xt : (d > 0 ? k + 1 : k) * w))
+            let sliceX = nn == 0 ? xt : Double(d > 0 ? k + 1 : k) * w
             let a = Double(d) * (bend * (0.4 + 0.3 * Double(nn)) + sin(t * 16 + Double(nn) * 0.9) * jit)
             sum += a
             chainX = sliceX
@@ -1160,7 +1160,7 @@ struct PackView: View {
                         PlyView(engine: engine, ply: ply)
                     }
                 }
-                LipBandView(points: engine.lipBand.map { CGPoint(x: $0[0], y: $0[1]) })
+                LipBandView(points: engine.lipBand.map { ($0[0], $0[1]) })
             }
             .rotation3DEffect(.degrees(engine.flapTilt.z * Double(engine.tearDir)), axis: (x: 0, y: 1, z: 0), anchor: UnitPoint(x: engine.flapOrigin.x / 100, y: engine.flapOrigin.y / 100), perspective: 1400)
             .rotation3DEffect(.degrees(engine.flapTilt.x), axis: (x: 1, y: 0, z: 0), anchor: UnitPoint(x: engine.flapOrigin.x / 100, y: engine.flapOrigin.y / 100), perspective: 1400)
@@ -1304,7 +1304,7 @@ struct PlyView: View {
             .opacity(1 - ply.underO * 1.6)
         }
         .frame(width: pw, height: ph)
-        .mask(PolyShape(points: ply.piece.map { CGPoint(x: $0.0 / 100 * pw, y: $0.1 / 100 * ph) }))
+        .mask(PolyShape(points: ply.piece.map { CGPoint(x: $0[0] / 100 * pw, y: $0[1] / 100 * ph) }))
         .rotation3DEffect(.degrees(ply.rotateY), axis: (x: 0, y: 1, z: 0), anchor: .leading, perspective: 700)
         .rotationEffect(.degrees(ply.rotateZ), anchor: .leading)
         .offset(x: 0, y: 0)
@@ -1613,7 +1613,7 @@ struct CardView: View {
                 Text(reversed ? "逆位 · REVERSED" : "正位 · UPRIGHT")
                     .font(.system(size: cw * 0.039, weight: .semibold, design: .serif))
                     .kerning(cw * 0.022)
-                    .foregroundStyle(Color(reversed ? 0x8A4A33 : 0x5A4A30))
+                    .foregroundStyle(Color(hex: reversed ? 0x8A4A33 : 0x5A4A30))
                     .padding(.bottom, ch * 0.038)
             }
             // 位置铭牌：香槟金梯形，跨在顶边
