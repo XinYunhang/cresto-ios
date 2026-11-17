@@ -152,8 +152,8 @@ enum TarotDeck {
     ]
     private static let suitEn: [String: String] = ["wa": "Wands", "cu": "Cups", "sw": "Swords", "pe": "Pentacles"]
 
-    // 小牌牌义（与 holo-reverse/src/tarot-data.js 对齐）：[upKw, revKw, upText, revText]，按花色各 14 张
-    private static let minorMeanings: [String: [[String]]] = [
+    // 小牌牌义（与 holo-reverse/src/tarot-data.js 对齐）：每张 = [upKw, revKw, upText, revText]，按花色各 14 张
+    private static let minorMeanings: [String: [Any]] = [
         "wa": [
             [["灵感", "迸发", "新机遇"], ["延迟", "熄火", "方向未明"], "一根燃着新芽的权杖递到手中；热情与创造就此点燃。", "热情受挫或时机未到；养一养火种，再出发。"],
             [["规划", "远见", "抉择"], ["犹疑", "计划受阻", "不安于现状"], "站在高处手握地球仪，眺望版图、筹划下一步的扩张。", "蓝图悬而未决；想走得更远，却怕迈出已知的世界。"],
@@ -225,7 +225,11 @@ enum TarotDeck {
         for (prefix, zh, base) in suitDefs {
             let meanings = minorMeanings[prefix]!
             for r in 1...14 {
-                let m = meanings[r - 1]
+                let m = meanings[r - 1] as! [Any]
+                let kwUp = m[0] as! [String]
+                let kwRev = m[1] as! [String]
+                let upText = m[2] as! String
+                let revText = m[3] as! String
                 let id = base + r - 1
                 let slug = "\(prefix)\(String(format: "%02d", r))"
                 cards.append(TarotCard(
@@ -233,12 +237,12 @@ enum TarotDeck {
                     slug: slug,
                     rwsFile: "\(prefix)\(String(format: "%02d", r)).jpg",
                     name: "\(zh)\(rankNames[r - 1])",
-                    en: r <= 10 ? "\(rankEn[r - 1]) \(suitEn[prefix]!)" : "\(rankEn[r - 1]) \(suitEn[prefix]!)",
+                    en: "\(rankEn[r - 1]) \(suitEn[prefix]!)",
                     roman: "\(r)",
-                    uprightKeywords: m[0],
-                    reversedKeywords: m[1],
-                    uprightText: m[2],
-                    reversedText: m[3]
+                    uprightKeywords: kwUp,
+                    reversedKeywords: kwRev,
+                    uprightText: upText,
+                    reversedText: revText
                 ))
             }
         }
