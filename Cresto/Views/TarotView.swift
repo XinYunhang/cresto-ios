@@ -86,8 +86,8 @@ final class HoloSpring {
 
     @discardableResult
     func set(_ response: Double, _ bounce: Double = 0) -> HoloSpring {
-        k = (2 * .pi / response) * (2 * .pi / response)
-        c = 4 * .pi * (1 - bounce) / response
+        k = (2 * Double.pi / response) * (2 * Double.pi / response)
+        c = 4 * Double.pi * (1 - bounce) / response
         return self
     }
 
@@ -430,7 +430,7 @@ final class TarotEngine: ObservableObject {
         // 撕扯上下的拉伸
         var tug: Double = 0
         if motion != 0, drag != nil, dragMoved, tearP.to == 0, let d = drag {
-            tug = Double(d.dy.signum()) * 170 * (1 - 1 / (1 + abs(d.dy) / 170))
+            tug = (d.dy < 0 ? -1.0 : 1.0) * 170 * (1 - 1 / (1 + abs(d.dy) / 170))
         }
         squeeze.to = tug != 0 ? -abs(tug) / 90 : (holding && state == .idle ? motion : 0)
 
@@ -500,7 +500,7 @@ final class TarotEngine: ObservableObject {
         }
 
         // 光流
-        pour(dt)
+        pour(dt: dt)
 
         // 卡牌状态机
         if state == .open, spreadAt == 0, cards.allSatisfy({ $0.phase == .shot }) {
@@ -511,7 +511,7 @@ final class TarotEngine: ObservableObject {
         for i in cards.indices where cards[i].phase == .orbit { orbit(&cards[i]) }
 
         // 卡牌散开后的悬停/摇摆/全息
-        let hot = pointer.inside || pointer.tap ? aimed() : nil
+        let hotSlot = pointer.inside || pointer.tap ? aimed() : nil
         for i in cards.indices {
             var c = cards[i]
             let p = c.p
@@ -524,8 +524,8 @@ final class TarotEngine: ObservableObject {
                 p[1].v = -Double.random(in: 1250...1450) * PH / 420
             }
             if c.phase == .spread {
-                if c == hot { c.until = t + 1.1 }
-                c.hover = c == hot || t < c.until || c.kb
+                if c.slot == hotSlot { c.until = t + 1.1 }
+                c.hover = c.slot == hotSlot || t < c.until || c.kb
                 let f = c.f
                 let w = t * 0.8 + Double(c.i) * 1.9
                 let on = c.hover
@@ -575,7 +575,7 @@ final class TarotEngine: ObservableObject {
         let slope = Double.random(in: -7.5...7.5)
         let bow = Double.random(in: -3...3)
         let freq = Double.random(in: 1.5...3.5)
-        let ph = Double.random(in: 0...(2 * .pi))
+        let ph = Double.random(in: 0...(2 * Double.pi))
         let wob = Double.random(in: 0.3...1.1)
         let y0 = Double.random(in: 10.5...14)
         var walk = 0.0
@@ -584,7 +584,7 @@ final class TarotEngine: ObservableObject {
             let x = Double(i) / Double(Self.jagCount) * 100
             let s = x / 50 - 1
             walk = clamp(walk + Double.random(in: -0.25...0.25) + (Double.random(in: 0...1) < 0.05 ? Double.random(in: -1.5...1.5) : 0), -2.2, 2.2)
-            let line = clamp(y0 + slope * s + bow * (1 - s * s) + wob * sin(s * freq * .pi + ph) + walk, Self.yMin, Self.yMax)
+            let line = clamp(y0 + slope * s + bow * (1 - s * s) + wob * sin(s * freq * Double.pi + ph) + walk, Self.yMin, Self.yMax)
             let tooth = Double.random(in: -0.42...0.42) + (Double.random(in: 0...1) < 0.14 ? Double.random(in: -1.2...1.2) : 0)
             let metal = Double.random(in: 0...1) < 0.12 ? Double.random(in: 1.2...2.1) : Double.random(in: 0.35...1.1)
             let jitterX = (i == 0 || i == Self.jagCount) ? 0 : Double.random(in: -0.3...0.3)
@@ -715,7 +715,7 @@ final class TarotEngine: ObservableObject {
             bits[i].slip = Double.random(in: 900...2600)
             bits[i].glide = (lx < 50 ? -1 : 1) * Double.random(in: -200...900)
             bits[i].sc = Double.random(in: 0.9...1.9)
-            bits[i].ph = Double.random(in: 0...(2 * .pi))
+            bits[i].ph = Double.random(in: 0...(2 * Double.pi))
             bits[i].age = i < 50 ? 0 : -Double.random(in: 0...0.22)
             bits[i].x = 0; bits[i].y = 0; bits[i].z = 0
         }
@@ -723,7 +723,7 @@ final class TarotEngine: ObservableObject {
 
     /// 包内坐标系 → 舞台坐标（onStage）
     private func onStage(_ lx: Double, _ ly: Double, _ lz: Double) -> (x: Double, y: Double, z: Double) {
-        let r = .pi / 180
+        let r = Double.pi / 180
         let cx = cos(prx.x * r), sx = sin(prx.x * r)
         let cy = cos(pry.x * r), sy = sin(pry.x * r)
         let cz = cos(prz.x * r), sz = sin(prz.x * r)
@@ -811,8 +811,8 @@ final class TarotEngine: ObservableObject {
             c.y0 = c.p[1].x
             c.vy0 = c.p[1].v
             c.rz0 = c.p[5].x
-            c.even = -Double(c.slot) * 2 * .pi / Double(cards.count)
-            c.end = .pi / 2 - (Double(c.slot) - (Double(cards.count) - 1) / 2) * 0.55
+            c.even = -Double(c.slot) * 2 * Double.pi / Double(cards.count)
+            c.end = Double.pi / 2 - (Double(c.slot) - (Double(cards.count) - 1) / 2) * 0.55
             c.landAt = c.from + TarotEngine.orbitDur
             c.p[6].to = f.s
             for k in 0..<6 { c.p[k].k = 0; c.p[k].c = 0; c.p[k].v = 0 }
@@ -831,8 +831,8 @@ final class TarotEngine: ObservableObject {
         let u = clamp((t - c.from) / TarotEngine.orbitDur, 0, 1)
         let turn = 1 - (1 - u) * (1 - u)
         let out = ease(0.52, 1, u)
-        let ring = sin(min(1, u / 0.42) * .pi / 2) * (1 - out)
-        let a = c.end + (1 - turn) * (c.even - c.end + .pi * 2.5)
+        let ring = sin(min(1, u / 0.42) * Double.pi / 2) * (1 - out)
+        let a = c.end + (1 - turn) * (c.even - c.end + Double.pi * 2.5)
         let sinA = sin(a), cosA = cos(a)
         let W = min(stageW * 0.33, 430)
         let mid = c.y0 + c.vy0 / 9 * (1 - exp(-9 * max(0, t - c.from)))
@@ -866,7 +866,7 @@ final class TarotEngine: ObservableObject {
         let side = min(w * 1.08, (vw - 40 - w) / (Double(n) - 1))
         let tight = side < w
         let ends = (Double(n) - 1) / 2
-        let lean = ends * 7 * .pi / 180
+        let lean = ends * 7 * Double.pi / 180
         let near = 1400 / (1400 - ends * 40)
         let gap = tight ? max(6, min(side, (vw / 2 - 8 - (w / 2 * cos(lean) + w * 0.7 * sin(lean)) * near) / (ends * near))) : side
         return (x: m * gap, y: -stageH * 0.03 + m * m * (tight ? 9 : 5) * s, z: tight ? m * 40 : 0, rz: m * (tight ? 7 : 2), s: s)
@@ -881,7 +881,7 @@ final class TarotEngine: ObservableObject {
             guard c.phase == .spread else { continue }
             let f = c.f
             let near = 1400 / (1400 - f.z)
-            let a = f.rz * .pi / 180
+            let a = f.rz * Double.pi / 180
             let cosA = cos(a), sinA = sin(a)
             let w = PW * 0.84 * f.s * near
             let h = w * 1.4
@@ -897,7 +897,7 @@ final class TarotEngine: ObservableObject {
                 cards[i] = c
             }
         }
-        return bestSlot
+        return bestSlotSlot
     }
 
     func tapCard(at index: Int) {
@@ -975,7 +975,7 @@ final class TarotEngine: ObservableObject {
         let sway = sin(ft * 0.9) * 1.5
         let go = !reduce && (state == .open || state == .spread)
         let s = t - openedAt
-        let a = atan(anchor.rz * .pi / 180)
+        let a = atan(anchor.rz * Double.pi / 180)
         let roof = 60 + ((-stageH / 2 - anchor.y) / cos(a) + PH * (0.5 - Self.tearBase / 100)) / u
         let soft = 36.0
         let full = (flowY0 + flowR0 - roof) * ribbons[0].r / flowR0 + soft + 20
@@ -1032,7 +1032,7 @@ final class TarotEngine: ObservableObject {
             let p2 = flowPoint(j + 1, d, sway: sway, carry: carry, ft: ft)
             let x = p1.0 + (p2.0 - p1.0) * motes.v[m]
             let y = p1.1 + (p2.1 - p1.1) * motes.v[m]
-            flowMotes[m] = (x: x, y: y, r: motes.r[m] * (0.6 + motes.u[m] * 0.7), o: sin(.pi * motes.u[m]) * min(1, len / 20))
+            flowMotes[m] = (x: x, y: y, r: motes.r[m] * (0.6 + motes.u[m] * 0.7), o: sin(Double.pi * motes.u[m]) * min(1, len / 20))
         }
         flowOpacity = glow.x
         flowDrained = go && s > 0.9
@@ -1041,7 +1041,7 @@ final class TarotEngine: ObservableObject {
     private func flowPoint(_ j: Int, _ d: Double, sway: Double, carry: Double, ft: Double) -> (Double, Double) {
         let e = ribbonLines[j]
         let k = min(1, d / 90)
-        let wave = (0.4 + 2 * k) * sin(((d - carry) / 22 - ft * 1.4) * 2 * .pi + e.ph) + sway * k
+        let wave = (0.4 + 2 * k) * sin(((d - carry) / 22 - ft * 1.4) * 2 * Double.pi + e.ph) + sway * k
         return (e.x + e.ux * d - e.uy * wave, flowY0 + e.uy * d + e.ux * wave)
     }
 
@@ -1789,14 +1789,14 @@ struct ConfettiCanvas: View {
                 guard !b.inside, b.age >= 0 else { continue }
                 let p = 1400 / max(300, 1400 - b.z)
                 let k = p * b.sc
-                let cr = cos(b.r * .pi / 180)
-                let sr = sin(b.r * .pi / 180)
-                let cq = cos((b.r - b.rot0) * 0.7 * .pi / 180)
+                let cr = cos(b.r * Double.pi / 180)
+                let sr = sin(b.r * Double.pi / 180)
+                let cq = cos((b.r - b.rot0) * 0.7 * Double.pi / 180)
                 let cx = size.width / 2 + b.x * p
                 let cy = oy + (size.height * 0.1 + b.y) * p
                 var c = ctx
                 c.translateBy(x: cx, y: cy)
-                c.rotate(by: .radians(b.r * .pi / 180))
+                c.rotate(by: .radians(b.r * Double.pi / 180))
                 c.scaleBy(x: k, y: k * max(0.18, abs(cq)))
                 switch b.kind {
                 case 0:
@@ -2007,17 +2007,17 @@ final class HoloSfx {
             let cutoff = from + (to - from) * k
             let white = Double.random(in: -1...1)
             let fClamp = min(8000, max(80, cutoff))
-            let fsin = 2 * sin(.pi * fClamp / 44100)
+            let fsin = 2 * sin(Double.pi * fClamp / 44100)
             band += fsin * (white - low - q * band)
             low += fsin * band
             high = white - low - q * band
             let env = attack > 0
                 ? (t < attack ? t / attack : exp(-(t - attack) * 5 / max(0.05, dur - attack)))
                 : exp(-t * 8)
-            let bellEnv = sin(.pi * min(1, t / dur))
+            let bellEnv = sin(Double.pi * min(1, t / dur))
             let v = band * env * gain
-            let panV = panSweep ? cos((1 - k) * .pi) : (pan?.first ?? 0)
-            let panR = panSweep ? sin((1 - k) * .pi) : ((pan?.count ?? 0) > 1 ? pan![1] : (pan?.first ?? 0))
+            let panV = panSweep ? cos((1 - k) * Double.pi) : (pan?.first ?? 0)
+            let panR = panSweep ? sin((1 - k) * Double.pi) : ((pan?.count ?? 0) > 1 ? pan![1] : (pan?.first ?? 0))
             l[i] = Float(v * (1 - max(0, panV)))
             r[i] = Float(v * (1 - max(0, -panR)))
             _ = bellEnv
@@ -2033,10 +2033,10 @@ final class HoloSfx {
             let t = Double(i) / 44100
             let cutoff = from + (to - from) * (t / dur)
             let white = Double.random(in: -1...1)
-            let fsin = 2 * sin(.pi * min(8000, max(80, cutoff)) / 44100)
+            let fsin = 2 * sin(Double.pi * min(8000, max(80, cutoff)) / 44100)
             band += fsin * (white - low - q * band)
             low += fsin * band
-            let env = sin(.pi * min(1, t / dur))
+            let env = sin(Double.pi * min(1, t / dur))
             let v = low * env * gain
             l[i] = Float(v * (1 - Double(pan) * 0.5 + 0.5 * 0))
             r[i] = Float(v * (1 + Double(pan) * 0.5))
@@ -2053,7 +2053,7 @@ final class HoloSfx {
             var v = 0.0
             for (ratio, level, life) in [(1.0, 1.0, 1.0), (3.9, 0.18, 0.22), (9.2, 0.05, 0.08)] {
                 let d = max(0.03, dur * life)
-                v += sin(2 * .pi * freq * ratio * t) * level * exp(-t / d * 4)
+                v += sin(2 * Double.pi * freq * ratio * t) * level * exp(-t / d * 4)
             }
             l[i] = Float(v * gain)
             r[i] = l[i]
@@ -2070,8 +2070,8 @@ final class HoloSfx {
             let t = Double(i) / 44100
             var mult = shape.first?.1 ?? 1
             for (s, m) in shape where s > 0 && t >= s { mult = m }
-            let wob = wobble > 0 ? sin(2 * .pi * 24 * t) * wobble : 0
-            phase += 2 * .pi * freq * (mult + wob) / 44100
+            let wob = wobble > 0 ? sin(2 * Double.pi * 24 * t) * wobble : 0
+            phase += 2 * Double.pi * freq * (mult + wob) / 44100
             let env = min(1, t / 0.008) * exp(-max(0, t - 0.01) * 3 / max(0.1, dur))
             let v = sin(phase) * env * gain
             l[i] = Float(v * (1 - Double(pan) * 0.5))
