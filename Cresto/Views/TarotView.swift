@@ -230,6 +230,15 @@ final class TarotEngine: ObservableObject {
         var until: Double = 0
         var kb = false
 
+        /// 位置铭牌文案（slot0=过去 / slot1=现在 / slot2=未来）
+        var positionLabel: String {
+            switch slot {
+            case 0: return "过去 · PAST"
+            case 1: return "现在 · PRESENT"
+            default: return "未来 · FUTURE"
+            }
+        }
+
         enum Phase2 { case `in`, shot, orbit, spread }
     }
     var deck: [(d: TarotCard, reversed: Bool)] = []
