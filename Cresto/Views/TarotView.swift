@@ -28,8 +28,7 @@ struct TarotView: View {
 
                     Spacer(minLength: 12)
 
-                    cardRow(availableWidth: proxy.size.width)
-                        .frame(maxWidth: .infinity)
+                    cardRow(totalWidth: proxy.size.width)
 
                     Spacer(minLength: 12)
 
@@ -73,21 +72,23 @@ struct TarotView: View {
 
     // MARK: 三张牌
 
-    private func cardRow(availableWidth: CGFloat) -> some View {
-        let cardWidth = min(max(84, (availableWidth - 56) / 3), 150)
-        return HStack(alignment: .top, spacing: 12) {
+    private func cardRow(totalWidth: CGFloat) -> some View {
+        // 左右各留 16pt，三张牌之间各 8pt：(W - 16*2 - 8*2) / 3 = (W - 48) / 3
+        // 向下取整，避免小数宽度累积后挤出屏幕
+        let cardWidth = max(60, ((totalWidth - 48) / 3).rounded(.down))
+        return HStack(alignment: .center, spacing: 8) {
             ForEach(cards) { item in
                 TarotCardView(drawn: item, width: cardWidth) {
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
                     detail = item
                 }
-                .offset(y: item.position == .present ? -8 : 0)
                 .transition(.asymmetric(
                     insertion: .offset(y: 30).combined(with: .opacity),
                     removal: .opacity
                 ))
             }
         }
+        .padding(.vertical, 8)   // 给顶部铭牌与底部纸边留出完整显示空间
+        .frame(maxWidth: .infinity)
         .animation(.spring(response: 0.5, dampingFraction: 0.86), value: cards.map(\.id))
     }
 
@@ -211,14 +212,15 @@ struct TarotCardView: View {
     @State private var drag: CGSize = .zero
     @State private var pressed = false
 
-    private var height: CGFloat { width * 1.54 }
+    /// 固定 1 : 1.68 的塔罗牌比例
+    private var height: CGFloat { width * 1.68 }
     private var gold: Color { Color(hex: 0xC5A059) }
     private var ink: Color { Color(hex: 0x4A3B26) }
 
     var body: some View {
-        let maxTilt: CGFloat = 12
-        let tiltY = max(-maxTilt, min(maxTilt, drag.width / 14))
-        let tiltX = max(-maxTilt, min(maxTilt, -drag.height / 16))
+        let maxTilt: CGFloat = 14
+        let tiltY = max(-maxTilt, min(maxTilt, drag.width / 12))
+        let tiltX = max(-maxTilt, min(maxTilt, -drag.height / 14))
 
         let card = ZStack {
             // 三层微错位暖金纸边，做出实体厚卡纸的侧面
@@ -239,29 +241,28 @@ struct TarotCardView: View {
         .accessibilityAddTraits(.isButton)
 
         if interactive {
-            card.gesture(dragGesture)
+            card
+                .gesture(dragGesture)
+                .onTapGesture {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    onTap()
+                }
         } else {
             card
         }
     }
 
-    // MARK: 拖动（3D 微倾 + 松手回弹 + 轻点判定）
+    // MARK: 拖动（3D 微倾 + 松手回弹；轻点由 onTapGesture 单独处理）
 
     private var dragGesture: some Gesture {
-        DragGesture(minimumDistance: 0)
+        DragGesture(minimumDistance: 6)
             .onChanged { value in
                 pressed = true
                 drag = value.translation
             }
-            .onEnded { value in
+            .onEnded { _ in
                 pressed = false
-                let dx = value.translation.width
-                let dy = value.translation.height
-                let moved = Double(dx * dx + dy * dy).squareRoot()
-                if moved < 8 {
-                    onTap()
-                }
-                withAnimation(.spring(response: 0.5, dampingFraction: 0.7)) {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
                     drag = .zero
                 }
             }
@@ -270,8 +271,10 @@ struct TarotCardView: View {
     // MARK: 卡面
 
     private var face: some View {
-        let innerWidth = width * 0.84
-        let innerHeight = height * 0.545
+        let innerWidth = width * 0.86
+        let topInset = height * 0.06                 // 给顶部位置铭牌留出的净空
+        let bottomBlock = max(28, height * 0.155)    // 底部编号/牌名/正逆位
+        let innerHeight = max(60, height - topInset - bottomBlock - height * 0.02)
 
         return ZStack {
             RoundedRectangle(cornerRadius: 11, style: .continuous)
@@ -286,56 +289,32 @@ struct TarotCardView: View {
                 )
 
             VStack(spacing: 0) {
-                HStack(alignment: .firstTextBaseline, spacing: 3) {
-                    Text(drawn.card.roman)
-                        .font(.system(size: max(7, width * 0.065), weight: .bold, design: .serif))
-                        .foregroundStyle(ink.opacity(0.8))
-                    Spacer(minLength: 2)
-                    Text(drawn.card.en.uppercased())
-                        .font(.system(size: max(5.5, width * 0.048), weight: .semibold, design: .serif))
-                        .kerning(width * 0.004)
-                        .foregroundStyle(ink.opacity(0.62))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.5)
-                }
-                .padding(.horizontal, width * 0.075)
-                .padding(.top, height * 0.052)
-
+                // 中间金色画框：插画以 scaledToFill 填满整个内框
                 illustration(width: innerWidth, height: innerHeight)
-                    .padding(.top, height * 0.02)
+                    .padding(.top, topInset)
 
                 Spacer(minLength: 0)
 
-                // 牌名标题始终正向
-                Text(drawn.card.name)
-                    .font(.system(size: max(10, width * 0.105), weight: .semibold, design: .serif))
-                    .foregroundStyle(ink)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-                    .padding(.horizontal, width * 0.06)
+                // 底部居中：编号 · 中文牌名 + 正/逆位小标
+                VStack(spacing: max(1, height * 0.006)) {
+                    Text("\(drawn.card.roman) · \(drawn.card.name)")
+                        .font(.system(size: max(9, width * 0.088), weight: .semibold, design: .serif))
+                        .foregroundStyle(ink)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                        .padding(.horizontal, width * 0.04)
 
-                Text(drawn.reversed ? "逆位 · REVERSED" : "正位 · UPRIGHT")
-                    .font(.system(size: max(5.5, width * 0.052), weight: .semibold, design: .serif))
-                    .kerning(width * 0.008)
-                    .foregroundStyle(Color(hex: drawn.reversed ? 0x8A4A33 : 0x5A4A30))
-                    .padding(.top, height * 0.012)
-                    .padding(.bottom, height * 0.042)
+                    Text(drawn.reversed ? "逆位 · REVERSED" : "正位 · UPRIGHT")
+                        .font(.system(size: max(5.5, width * 0.049), weight: .semibold, design: .serif))
+                        .kerning(width * 0.007)
+                        .foregroundStyle(Color(hex: drawn.reversed ? 0x8A4A33 : 0x5A4A30))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                }
+                .padding(.bottom, height * 0.035)
             }
 
-            // 倾斜全息镭射：斜向彩虹，跟随拖拽偏移
-            LinearGradient(
-                colors: [
-                    Color(hex: 0xFF7AA8), Color(hex: 0xFFCF6B), Color(hex: 0xA8FF8A),
-                    Color(hex: 0x6BE2FF), Color(hex: 0x9B8CFF), Color(hex: 0xFF7AA8)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .frame(width: width * 2.2, height: height * 2.2)
-            .offset(x: drag.width * 0.35, y: drag.height * 0.35)
-            .blendMode(.colorDodge)
-            .opacity(0.24)
-            .allowsHitTesting(false)
+            holoEffect
         }
         .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
         .overlay(
@@ -343,6 +322,40 @@ struct TarotCardView: View {
                 .strokeBorder(gold.opacity(0.55), lineWidth: 0.8)
         )
         .overlay(alignment: .top) { nameplate }
+    }
+
+    /// 浅色羊皮纸上的全息镭射：
+    /// 高饱和彩虹用 overlay 叠色，再叠一道白色斜向高光（screen），起止点跟随拖动。
+    private var holoEffect: some View {
+        let nx = max(-0.32, min(0.32, drag.width / max(1, width)))
+        let ny = max(-0.32, min(0.32, drag.height / max(1, width)))
+
+        return ZStack {
+            LinearGradient(
+                colors: [
+                    Color(hex: 0xFF1F6B), Color(hex: 0xFF8A00), Color(hex: 0xFFE600),
+                    Color(hex: 0x33E07A), Color(hex: 0x00C2FF), Color(hex: 0x6A5BFF),
+                    Color(hex: 0xFF3DDA)
+                ],
+                startPoint: UnitPoint(x: 0.02 + nx, y: -0.22 + ny),
+                endPoint: UnitPoint(x: 0.98 + nx, y: 1.22 + ny)
+            )
+            .blendMode(.overlay)
+            .opacity(0.45)
+
+            LinearGradient(
+                stops: [
+                    .init(color: .clear, location: 0.34),
+                    .init(color: .white.opacity(0.9), location: 0.47),
+                    .init(color: .clear, location: 0.60)
+                ],
+                startPoint: UnitPoint(x: 0.10 + nx * 1.6, y: -0.10 + ny * 1.6),
+                endPoint: UnitPoint(x: 0.90 + nx * 1.6, y: 1.10 + ny * 1.6)
+            )
+            .blendMode(.screen)
+            .opacity(0.35)
+        }
+        .allowsHitTesting(false)
     }
 
     /// 内框插画：正位正常，逆位只把插画旋转 180°，外框/铭牌/牌名保持正向
@@ -440,39 +453,40 @@ struct TarotDetailSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack(alignment: .top, spacing: 16) {
-                        TarotCardView(drawn: drawn, width: 132, interactive: false)
+                        // 固定缩略图，不参与文字排版，杜绝卡片压住标题
+                        TarotCardThumbnail(drawn: drawn)
+                            .frame(width: 96, height: 160)
 
-                        VStack(alignment: .leading, spacing: 7) {
+                        VStack(alignment: .leading, spacing: 8) {
                             Text(drawn.position.label)
                                 .font(.system(size: 10, weight: .semibold, design: .serif))
                                 .kerning(1.4)
                                 .foregroundStyle(Color(hex: 0x8A744D))
 
                             Text(drawn.card.name)
-                                .font(.system(size: 24, weight: .semibold, design: .serif))
+                                .font(.system(size: 22, weight: .semibold, design: .serif))
                                 .foregroundStyle(Theme.text)
 
                             Text(drawn.card.en)
-                                .font(.system(size: 12, design: .serif))
+                                .font(.system(size: 11.5, design: .serif))
                                 .foregroundStyle(Theme.textTertiary)
 
-                            Text("\(drawn.card.roman) · \(drawn.reversed ? "逆位" : "正位")")
-                                .font(.system(size: 11.5))
-                                .foregroundStyle(Theme.textSecondary)
-
-                            Text(drawn.reversed ? "REVERSED" : "UPRIGHT")
+                            Text(drawn.reversed ? "逆位 · REVERSED" : "正位 · UPRIGHT")
                                 .font(.system(size: 9, weight: .semibold, design: .serif))
-                                .kerning(1.2)
-                                .foregroundStyle(Theme.textTertiary)
-                        }
+                                .kerning(0.8)
+                                .foregroundStyle(Color(hex: drawn.reversed ? 0x8A4A33 : 0x5A4A30))
+                                .padding(.horizontal, 9)
+                                .padding(.vertical, 4)
+                                .background(Capsule().fill(Color(hex: 0xF3E7CB)))
 
-                        Spacer(minLength: 0)
-                    }
-
-                    HStack(spacing: 6) {
-                        ForEach(drawn.card.keywords(reversed: drawn.reversed), id: \.self) { keyword in
-                            AccentChip(text: keyword)
+                            HStack(spacing: 6) {
+                                ForEach(drawn.card.keywords(reversed: drawn.reversed), id: \.self) { keyword in
+                                    AccentChip(text: keyword, small: true)
+                                }
+                            }
+                            .padding(.top, 2)
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
 
                     Text(drawn.reversed ? "逆位解读" : "正位解读")
@@ -504,6 +518,44 @@ struct TarotDetailSheet: View {
             }
             .tint(Theme.text)
         }
+    }
+}
+
+// MARK: - 弹窗内的固定缩略牌面（96 × 160）
+
+struct TarotCardThumbnail: View {
+    let drawn: TarotDrawnCard
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .fill(Color(hex: 0xF4ECD8))
+
+            if let image = TarotArt.image(named: drawn.card.rwsFile) {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 96, height: 160)
+                    .clipped()
+                    .rotationEffect(.degrees(drawn.reversed ? 180 : 0))
+            } else {
+                VStack(spacing: 4) {
+                    Text(drawn.card.roman)
+                        .font(.system(size: 15, weight: .semibold, design: .serif))
+                        .foregroundStyle(Color(hex: 0xC5A059))
+                    Text(drawn.card.name)
+                        .font(.system(size: 12, weight: .semibold, design: .serif))
+                        .foregroundStyle(Color(hex: 0x4A3B26))
+                }
+            }
+        }
+        .frame(width: 96, height: 160)
+        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .strokeBorder(Color(hex: 0xC5A059), lineWidth: 1.5)
+        )
+        .shadow(color: .black.opacity(0.18), radius: 6, y: 3)
     }
 }
 
