@@ -1,7 +1,8 @@
-// 构建后处理：把 Vite 产出的 JS/CSS 内联进 dist/index.html，并剥掉 crossorigin 属性。
+// 构建后处理：把 Vite 产出的 JS/CSS 内联进 dist/index.html，转为经典脚本并剥掉 crossorigin。
 // 原因：WKWebView 经 loadFileURL 加载 file:// 页面时，<script type="module" crossorigin>
 // 与 <link crossorigin> 会以 CORS 模式拉取子资源，而 file:// 没有 origin，请求被 WebKit
-// 拦截 → 页面全黑。内联后页面不再发起任何 JS/CSS 子资源请求，file:// 下稳定可用。
+// 拦截 → 页面全黑。单文件内联 + 经典脚本（bundle 无 import/export，可安全降级）后
+// 不再发起任何会被拦截的请求，file:// 下稳定可用。
 import fs from 'node:fs'
 import path from 'node:path'
 
@@ -11,13 +12,14 @@ let html = fs.readFileSync(htmlPath, 'utf8')
 
 const before = html.length
 
-// 1) 内联模块脚本（type="module"），并转义 </script> 防止提前闭合
+// 1) 内联脚本并降级为经典脚本（bundle 为单 chunk、无 import/export/import.meta，
+//    经典脚本在所有 WebKit 版本的 file:// 下都必然执行），转义 </script> 防止提前闭合
 html = html.replace(
   /<script type="module"[^>]*src="\.\/(assets\/[^"]+\.js)"[^>]*><\/script>/g,
   (match, src) => {
     const code = fs.readFileSync(path.join(dist, src), 'utf8')
     const safe = code.replace(/<\/script>/gi, '<\\/script>')
-    return `<script type="module">\n${safe}\n</script>`
+    return `<script>\n${safe}\n</script>`
   }
 )
 
