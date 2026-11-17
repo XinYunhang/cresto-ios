@@ -154,7 +154,17 @@ final class TarotEngine: ObservableObject {
     var hurt = false
     var tugged = false
     var hitDisabled = false
-    var drag: (x0: Double, y0: Double, p0: Double, moved: Bool, dy: Double, lx: Double, lt: Double, k: Double)?
+    final class DragState {
+        var x0: Double = 0
+        var y0: Double = 0
+        var p0: Double = 0
+        var moved = false
+        var dy: Double = 0
+        var lx: Double = 0
+        var lt: Double = 0
+        var k: Double = 0
+    }
+    var drag: DragState?
     var wasDrag = false
 
     // ---- 包体姿态 ----
@@ -302,10 +312,10 @@ final class TarotEngine: ObservableObject {
         }
         guard state == .idle, let drag else { return }
         if tearP.to == 0 {
-            drag.dy = dy
+            drag?.dy = dy
             if abs(dx) < 8 || abs(dx) < abs(dy) * 0.5 { return }
             tearDir = dx < 0 ? -1 : 1
-            drag.y0 += dy // 重置 y0（方向锁定后只看横向）
+            drag?.y0 += dy // 重置 y0（方向锁定后只看横向）
             startTearing()
         }
         guard tearP.to < 1 else { return }
@@ -315,9 +325,9 @@ final class TarotEngine: ObservableObject {
         tearPh.to = -(8 + tearP.to * 22) - clamp(-dy * 0.2, 0, 24)
         let now = time.timeIntervalSince1970 * 1000
         tearVX = Double(dx) / max(8, now - drag.lt) * 1000
-        drag.lt = now
-        drag.k = (drag.k ?? 0) + (clamp(Double(dy) / max(60, abs(dx)), -0.7, 0.7) * PW / PH - (drag.k ?? 0)) * 0.3
-        steer(drag.k ?? 0)
+        drag?.lt = now
+        drag?.k = (drag?.k ?? 0) + (clamp(Double(dy) / max(60, abs(dx)), -0.7, 0.7) * PW / PH - (drag?.k ?? 0)) * 0.3
+        steer(drag?.k ?? 0)
         if tearP.to > 0.985 { open() }
     }
 
@@ -386,7 +396,7 @@ final class TarotEngine: ObservableObject {
         }
         burst()
         spawn()
-        sfx?.rip(0)
+        sfx?.rip(speed: 0)
         sfx?.pop(!reduce)
         // ★ 原生持久化：一包三张即落库（现在位 = deck[1]，首页核心牌同步）
         if let context {
@@ -614,9 +624,9 @@ final class TarotEngine: ObservableObject {
         var underO: Double
     }
     var plyStates: [PlyState] = []
-    var bodyClipFront: [(Double, Double)] = [(0.0, 0.0), (100.0, 0.0), (100.0, 100.0), (0.0, 100.0)]
-    var bodyClipBack: [(Double, Double)] = [(0.0, 0.0), (100.0, 0.0), (100.0, 100.0), (0.0, 100.0)]
-    var lipBand: [(Double, Double)] = []
+    var bodyClipFront: [[Double]] = [[0.0, 0.0], [100.0, 0.0], [100.0, 100.0], [0.0, 100.0]]
+    var bodyClipBack: [[Double]] = [[0.0, 0.0], [100.0, 0.0], [100.0, 100.0], [0.0, 100.0]]
+    var lipBand: [[Double]] = []
     var flapOrigin = (x: Double(50), y: Double(10.5))
     var flapTilt = (z: Double(0), x: Double(0))
 
@@ -642,7 +652,7 @@ final class TarotEngine: ObservableObject {
         }
         // 撕裂亮边带（银色金属层，宽度 = 各点 metal）
         let spanAll = d > 0 ? torn + [jag.last!] : [jag[0]] + torn
-        lipBand = band(spanAll.map { [$0[0], $0[1], 0, 0, $0[4]] }, 1)
+        lipBand = band(spanAll.map { [$0[0], $0[1], 0.0, 0.0, $0[4]] }, 1)
         flapOrigin = (x: xt, y: yt)
 
         plyStates = []
@@ -662,7 +672,7 @@ final class TarotEngine: ObservableObject {
             chainX = sliceX
             let L = d < 0 && lo == xt ? lo : max(0, lo - lap)
             let R = d > 0 && hi == xt ? hi : min(100, hi + lap)
-            var span: [[Double]] = [[L, yAt(L), 0, 0, 0.8]]
+            var span: [[Double]] = [[L, yAt(L), 0.0, 0.0, 0.8]]
             span.append(contentsOf: jag.filter { $0[0] > L && $0[0] < R })
             span.append([R, yAt(R), 0, 0, 0.8])
             var piece: [(Double, Double)] = [[L, 0], [R, 0]]
@@ -678,7 +688,7 @@ final class TarotEngine: ObservableObject {
     }
 
     /// 沿撕裂边缘的亮边带（宽度 = 各点 metal）
-    private func band(_ a: [[Double]], _ sign: Double) -> [(Double, Double)] {
+    private func band(_ a: [[Double]], _ sign: Double) -> [[Double]] {
         var pts = a.map { (Double($0[0]), Double($0[1])) }
         pts.append(contentsOf: a.reversed().map { (Double($0[0]), Double($0[1] + sign * $0[4])) })
         return pts
@@ -836,7 +846,7 @@ final class TarotEngine: ObservableObject {
         if u == 1 {
             c.phase = .spread
             for k in 0..<7 { p[k].set(0.5, 0.22) }
-            sfx?.land(c.d.arcana == "major" ? "major" : "minor", c.slot)
+            sfx?.land(c.d.id < 22 ? "major" : "minor", slot: c.slot)
         }
     }
 
@@ -863,8 +873,9 @@ final class TarotEngine: ObservableObject {
     }
 
     /// 指针命中的展开态卡牌（aimed）
-    private func aimed() -> Card? {
-        var best: Card?
+    private func aimed() -> Int? {
+        var bestSlot: Int?
+        var bestZ: Double = -1
         for i in cards.indices {
             var c = cards[i]
             guard c.phase == .spread else { continue }
@@ -878,14 +889,15 @@ final class TarotEngine: ObservableObject {
             let dy = pointer.y + padShift - (stageH * 0.4 + (stageH * 0.1 + f.y) * near)
             let hx = (dx * cosA + dy * sinA) / w + 0.5
             let hy = (dy * cosA - dx * sinA) / h + 0.5
-            if hx >= 0, hx <= 1, hy >= 0, hy <= 1, best == nil || f.z >= (best?.f.z ?? 0) {
+            if hx >= 0, hx <= 1, hy >= 0, hy <= 1, f.z >= bestZ {
                 c.hx = hx
                 c.hy = hy
-                best = c
+                bestSlot = c.slot
+                bestZ = f.z
                 cards[i] = c
             }
         }
-        return best
+        return bestSlot
     }
 
     func tapCard(at index: Int) {
@@ -946,7 +958,7 @@ final class TarotEngine: ObservableObject {
     func fit() {
         let u = max(1, PW / 100)
         let room = 2.5 + (stageH / 2 - PH * (0.5 - Self.tearBase / 100)) / u
-        flowReach = reduce ? 45 + room * 0.6 : (45 + room) * sqrt(pow(47.0 / 45.0, 2) + 1) + 36 + 20
+        flowReach = reduce ? 45 + room * 0.6 : (45 + room) * 1.389 + 56
         for i in ribbons.indices { ribbons[i].len = flowReach - ribbons[i].r }
     }
 
@@ -1139,7 +1151,7 @@ struct PackView: View {
                         PlyView(engine: engine, ply: ply)
                     }
                 }
-                LipBandView(points: engine.lipBand)
+                LipBandView(points: engine.lipBand.map { CGPoint(x: $0[0], y: $0[1]) })
             }
             .rotation3DEffect(.degrees(engine.flapTilt.z * Double(engine.tearDir)), axis: (x: 0, y: 1, z: 0), anchor: UnitPoint(x: engine.flapOrigin.x / 100, y: engine.flapOrigin.y / 100), perspective: 1400)
             .rotation3DEffect(.degrees(engine.flapTilt.x), axis: (x: 1, y: 0, z: 0), anchor: UnitPoint(x: engine.flapOrigin.x / 100, y: engine.flapOrigin.y / 100), perspective: 1400)
@@ -1436,7 +1448,6 @@ struct StarMedallion: View {
             .scaleEffect(x: 1 + 0.06 * squeeze, y: 1 - 0.08 * squeeze)
             .offset(x: engine.held ? tremble : 0, y: engine.held ? -tremble * 0.6 : 0)
             .shadow(color: .black.opacity(0.38), radius: engine.PW * 0.03, y: engine.PW * 0.018)
-            _ = timeline.date.timeIntervalSinceReferenceDate
         }
         .allowsHitTesting(false)
     }
@@ -1517,8 +1528,7 @@ struct CardView: View {
             // 牌面
             cardFace(c)
             // 铭牌（跨在顶边，始终正立）
-            plaque
-                .position(x: cw / 2, y: -1)
+
         }
         .frame(width: cw, height: ch)
         .offset(x: p[0].x, y: p[1].x)
@@ -1547,9 +1557,8 @@ struct CardView: View {
         return ZStack {
             // 做旧羊皮纸：四层径向光影 + 底色
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(
-                    Color(hex: 0xF4ECD8)
-                        .overlay(
+                .fill(Color(hex: 0xF4ECD8))
+                .overlay(
                             RadialGradient(colors: [Color(hex: 0xFFFCF1).opacity(0.55), .clear], center: UnitPoint(x: 0.28, y: 0.16), startRadius: 0, endRadius: ch * 0.9)
                         )
                 )
@@ -1739,7 +1748,7 @@ struct FlowCanvas: View {
                 path.move(to: CGPoint(x: pts[0].0 * sx, y: pts[0].1 * sy))
                 for pt in pts.dropFirst() { path.addLine(to: CGPoint(x: pt.0 * sx, y: pt.1 * sy)) }
                 path.closeSubpath()
-                let base = CGPoint(x: (engine.ribbonLines[j].gx) * sx, y: engine.flowY0 * sy)
+                let base = CGPoint(x: (engine.ribbons[j].gx) * sx, y: engine.flowY0 * sy)
                 let tipPt = pts[pts.count / 2]
                 ctx.fill(path, with: .linearGradient(
                     Gradient(colors: [Color(hex: 0xFFF7E3).opacity(0.95), color.opacity(0.92)]),
@@ -1824,6 +1833,25 @@ struct ConfettiCanvas: View {
     }
 }
 
+// MARK: - 全息镭射渐变
+
+enum HoloAssets {
+    static let rainbow: Gradient = {
+        let palette: [Color] = [
+            Color(hex: 0xFF7AA8), Color(hex: 0xFFCF6B), Color(hex: 0xA8FF8A),
+            Color(hex: 0x6BE2FF), Color(hex: 0x9B8CFF)
+        ]
+        var stops: [Gradient.Stop] = []
+        let cycles = 16
+        for c in 0...cycles {
+            for (i, color) in palette.enumerated() {
+                stops.append(.init(color: color, location: CGFloat(c) / CGFloat(cycles) + CGFloat(i) / (5 * CGFloat(cycles))))
+            }
+        }
+        return Gradient(stops: stops)
+    }()
+}
+
 // MARK: - 合成音效（AVAudioEngine 移植 voices()）
 
 final class HoloSfx {
@@ -1869,16 +1897,18 @@ final class HoloSfx {
         if !engine.isRunning { try? engine.start() }
     }
 
-    private func play(_ buffer: AVAudioPCMBuffer, pan: Float = 0) {
+    private func play(_ buffer: AVAudioPCMBuffer?, pan: Float = 0) {
+        guard let buffer else { return }
         unlock()
         guard engine.isRunning else { return }
         let player = AVAudioPlayerNode()
         engine.attach(player)
         engine.connect(player, to: mixer, format: buffer.format)
         player.pan = pan
+        let bufferDuration = Double(buffer.frameLength) / buffer.format.sampleRate
         player.scheduleBuffer(buffer, at: nil)
         player.play()
-        DispatchQueue.main.asyncAfter(deadline: .now() + buffer.duration + 0.1) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + bufferDuration + 0.1) {
             player.stop()
             engine.detach(player)
         }
@@ -1887,7 +1917,7 @@ final class HoloSfx {
     // MARK: 各提示音（离线渲染 PCM）
 
     func grab() { play(Self.renderAir(from: 3000, to: 2200, q: 0.7, gain: 0.3, attack: 0.003, dur: 0.09, send: 0)) }
-    func eep() { play(Self.renderCoo(freq: 1250, shape: [(0, 0.82), (0.05, 1.25), (0.13, 1.02)], gain: 0.05, wobble: 0.04, dur: 0.2)) }
+    func eep() { play(Self.renderCoo(freq: 1250, shape: [(0, 0.82), (0.05, 1.25), (0.13, 1.02)], gain: 0.05, dur: 0.2, wobble: 0.04)) }
     func phew() {
         play(Self.renderCoo(freq: 900, shape: [(0, 1.1), (0.24, 0.6)], gain: 0.05, dur: 0.32))
         play(Self.renderAir(from: 1500, to: 700, q: 0.6, gain: 0.03, attack: 0.02, dur: 0.26, send: 0))
