@@ -614,8 +614,8 @@ final class TarotEngine: ObservableObject {
         var underO: Double
     }
     var plyStates: [PlyState] = []
-    var bodyClipFront: [(Double, Double)] = [[0.0, 0.0], [100.0, 0.0], [100.0, 100.0], [0.0, 100.0]]
-    var bodyClipBack: [(Double, Double)] = [[0.0, 0.0], [100.0, 0.0], [100.0, 100.0], [0.0, 100.0]]
+    var bodyClipFront: [(Double, Double)] = [(0.0, 0.0), (100.0, 0.0), (100.0, 100.0), (0.0, 100.0)]
+    var bodyClipBack: [(Double, Double)] = [(0.0, 0.0), (100.0, 0.0), (100.0, 100.0), (0.0, 100.0)]
     var lipBand: [(Double, Double)] = []
     var flapOrigin = (x: Double(50), y: Double(10.5))
     var flapTilt = (z: Double(0), x: Double(0))
