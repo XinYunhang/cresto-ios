@@ -114,11 +114,29 @@ struct TarotWebContainer: UIViewRepresentable {
         controller.add(context.coordinator, name: "tarotCardTapped")
         controller.add(context.coordinator, name: "tarotSpreadCommitted")
         controller.add(context.coordinator, name: "tarotRedraw")
+        controller.add(context.coordinator, name: "tarotLog")
         // documentStart 注入启动态（早于页面模块脚本执行）
         controller.addUserScript(
             WKUserScript(
                 source: "window.__TAROT_BOOT__ = \(boot.json);",
                 injectionTime: .atDocumentStart,
+                forMainFrameOnly: true
+            )
+        )
+        // 页面 JS 报错/就绪状态回传 AppLog（远端排障）
+        let logScript = """
+        window.addEventListener('error', function(e){ try { window.webkit.messageHandlers.tarotLog.postMessage('JS error: ' + e.message + ' @' + (e.filename || '') + ':' + (e.lineno || 0)) } catch(_) {} });
+        window.addEventListener('unhandledrejection', function(e){ try { window.webkit.messageHandlers.tarotLog.postMessage('Unhandled rejection: ' + (e.reason && e.reason.message || e.reason)) } catch(_) {} });
+        """
+        controller.addUserScript(
+            WKUserScript(source: logScript, injectionTime: .atDocumentStart, forMainFrameOnly: true)
+        )
+        controller.addUserScript(
+            WKUserScript(
+                source: """ 
+                window.addEventListener('load', function(){ try { window.webkit.messageHandlers.tarotLog.postMessage('dom-ready: ' + (document.querySelector('.pack-stage') ? 'sealed' : document.querySelector('.fan-stage') ? 'fan' : document.querySelector('.spread-row') ? 'spread' : 'empty') + ', imgs=' + document.images.length) } catch(_) {} });
+                """,
+                injectionTime: .atDocumentEnd,
                 forMainFrameOnly: true
             )
         )
@@ -186,6 +204,8 @@ struct TarotWebContainer: UIViewRepresentable {
                 DispatchQueue.main.async {
                     self.parent.onRedraw()
                 }
+            case "tarotLog":
+                AppLog.info("塔罗页面：\(String(describing: message.body))")
             default:
                 break
             }

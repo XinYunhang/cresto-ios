@@ -6,7 +6,7 @@
   "description": "塔罗三牌阵网页（WKWebView 离线嵌入版）：2.5D 羊皮纸牌框 + RWS 公版图 + WebKit 桥接",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && node scripts/inline.js",
     "preview": "vite preview"
   },
   "devDependencies": {

@@ -93,7 +93,7 @@ body {
 .pack-body {
   position: absolute;
   inset: 0;
-  background-image: url('../tarot/pack.png');
+  background-image: url('tarot/pack.png');
   background-size: 100% 100%;
   background-repeat: no-repeat;
   filter: drop-shadow(0 14px 22px rgba(0, 0, 0, 0.42));
@@ -124,7 +124,7 @@ body {
 .strip {
   position: absolute;
   inset: 0;
-  background-image: url('../tarot/torn-strip.png');
+  background-image: url('tarot/torn-strip.png');
   background-size: 100% 100%;
   background-repeat: no-repeat;
   filter: drop-shadow(0 5px 9px rgba(0, 0, 0, 0.3));
@@ -221,7 +221,7 @@ body {
 
 .fan-card .back {
   position: absolute; inset: 0;
-  background-image: url('../tarot/back.png');
+  background-image: url('tarot/back.png');
   background-size: 100% 100%;
   background-repeat: no-repeat;
   border-radius: 9px;
@@ -340,7 +340,7 @@ body {
   box-shadow: inset 0 0 18px rgba(94, 74, 40, calc(0.22 * var(--lift, 1)));
 }
 .slot-face.back-face {
-  background-image: url('../tarot/back.png');
+  background-image: url('tarot/back.png');
   background-size: 100% 100%;
   background-repeat: no-repeat;
 }
