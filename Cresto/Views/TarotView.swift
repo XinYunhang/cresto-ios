@@ -1066,7 +1066,8 @@ struct StageView: View {
                 .scaleEffect(1 - engine.py.x / 300)
                 .opacity(groundOpacity)
 
-            // 场景（flow 在包后，卡牌在包前）\            ZStack {
+            // 场景（flow 在包后，卡牌在包前）
+            ZStack {
                 FlowCanvas(engine: engine, packCenter: center)
                 PackView(engine: engine, center: center)
                 ForEach(engine.cards.indices, id: \.self) { i in
