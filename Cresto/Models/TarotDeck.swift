@@ -223,13 +223,31 @@ enum TarotDeck {
     private static let minors: [TarotCard] = {
         var cards: [TarotCard] = []
         for (prefix, zh, base) in suitDefs {
-            let meanings = minorMeanings[prefix]!
+            let meanings = minorMeanings[prefix] ?? []
+            let suitEnName = suitEn[prefix] ?? prefix
             for r in 1...14 {
-                let m = meanings[r - 1] as! [Any]
-                let kwUp = m[0] as! [String]
-                let kwRev = m[1] as! [String]
-                let upText = m[2] as! String
-                let revText = m[3] as! String
+                guard rankNames.indices.contains(r - 1),
+                      rankEn.indices.contains(r - 1) else { continue }
+
+                // 全部用可选绑定解析，任何数据形状异常都退回空值，绝不用 ! 强解
+                let raw: [Any]? = meanings.indices.contains(r - 1) ? (meanings[r - 1] as? [Any]) : nil
+                let kwUp: [String] = {
+                    guard let raw, raw.indices.contains(0) else { return [] }
+                    return raw[0] as? [String] ?? []
+                }()
+                let kwRev: [String] = {
+                    guard let raw, raw.indices.contains(1) else { return [] }
+                    return raw[1] as? [String] ?? []
+                }()
+                let upText: String = {
+                    guard let raw, raw.indices.contains(2) else { return "" }
+                    return raw[2] as? String ?? ""
+                }()
+                let revText: String = {
+                    guard let raw, raw.indices.contains(3) else { return "" }
+                    return raw[3] as? String ?? ""
+                }()
+
                 let id = base + r - 1
                 let slug = "\(prefix)\(String(format: "%02d", r))"
                 cards.append(TarotCard(
@@ -237,7 +255,7 @@ enum TarotDeck {
                     slug: slug,
                     rwsFile: "\(prefix)\(String(format: "%02d", r)).jpg",
                     name: "\(zh)\(rankNames[r - 1])",
-                    en: "\(rankEn[r - 1]) \(suitEn[prefix]!)",
+                    en: "\(rankEn[r - 1]) \(suitEnName)",
                     roman: "\(r)",
                     uprightKeywords: kwUp,
                     reversedKeywords: kwRev,
