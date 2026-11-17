@@ -226,7 +226,7 @@ final class TarotEngine: ObservableObject {
         var even: Double = 0, end: Double = 0
         var landAt: Double = 0
         var f: (x: Double, y: Double, z: Double, rz: Double, s: Double) = (0, 0, 0, 0, 1)
-        var p: [HoloSpring]          // x, y, z, rx, ry, rz, s
+        var p: [HoloSpring] = []          // x, y, z, rx, ry, rz, s
         var until: Double = 0
         var kb = false
 
@@ -312,10 +312,10 @@ final class TarotEngine: ObservableObject {
         }
         guard state == .idle, let drag else { return }
         if tearP.to == 0 {
-            drag?.dy = dy
+            drag.dy = dy
             if abs(dx) < 8 || abs(dx) < abs(dy) * 0.5 { return }
             tearDir = dx < 0 ? -1 : 1
-            drag?.y0 += dy // 重置 y0（方向锁定后只看横向）
+            drag.y0 += dy // 重置 y0（方向锁定后只看横向）
             startTearing()
         }
         guard tearP.to < 1 else { return }
@@ -325,9 +325,9 @@ final class TarotEngine: ObservableObject {
         tearPh.to = -(8 + tearP.to * 22) - clamp(-dy * 0.2, 0, 24)
         let now = time.timeIntervalSince1970 * 1000
         tearVX = Double(dx) / max(8, now - drag.lt) * 1000
-        drag?.lt = now
-        drag?.k = (drag?.k ?? 0) + (clamp(Double(dy) / max(60, abs(dx)), -0.7, 0.7) * PW / PH - (drag?.k ?? 0)) * 0.3
-        steer(drag?.k ?? 0)
+        drag.lt = now
+        drag.k = drag.k + (clamp(Double(dy) / max(60, abs(dx)), -0.7, 0.7) * PW / PH - drag.k) * 0.3
+        steer(drag.k)
         if tearP.to > 0.985 { open() }
     }
 
@@ -615,8 +615,8 @@ final class TarotEngine: ObservableObject {
     struct PlyState {
         var hidden: Bool
         var lo: Double, hi: Double
-        var piece: [(Double, Double)]
-        var lip: [(Double, Double)]
+        var piece: [[Double]]
+        var lip: [[Double]]
         var rotateY: Double
         var rotateZ: Double
         var sliceX: Double
@@ -674,8 +674,8 @@ final class TarotEngine: ObservableObject {
             let R = d > 0 && hi == xt ? hi : min(100, hi + lap)
             var span: [[Double]] = [[L, yAt(L), 0.0, 0.0, 0.8]]
             span.append(contentsOf: jag.filter { $0[0] > L && $0[0] < R })
-            span.append([R, yAt(R), 0, 0, 0.8])
-            var piece: [(Double, Double)] = [[L, 0], [R, 0]]
+            span.append([R, yAt(R), 0.0, 0.0, 0.8])
+            var piece: [[Double]] = [[L, 0.0], [R, 0.0]]
             piece.append(contentsOf: span.reversed().map { [$0[0], $0[1]] })
             let lip = band(span, -1)
             plyStates.append(PlyState(
@@ -689,8 +689,8 @@ final class TarotEngine: ObservableObject {
 
     /// 沿撕裂边缘的亮边带（宽度 = 各点 metal）
     private func band(_ a: [[Double]], _ sign: Double) -> [[Double]] {
-        var pts = a.map { (Double($0[0]), Double($0[1])) }
-        pts.append(contentsOf: a.reversed().map { (Double($0[0]), Double($0[1] + sign * $0[4])) })
+        var pts: [[Double]] = a.map { [$0[0], $0[1]] }
+        pts.append(contentsOf: a.reversed().map { [$0[0], $0[1] + sign * $0[4]] })
         return pts
     }
 
@@ -795,8 +795,17 @@ final class TarotEngine: ObservableObject {
         }
     }
 
+    private func shuffle(_ a: [TarotCard]) -> [TarotCard] {
+        var arr = a
+        for i in (1..<arr.count).reversed() {
+            let j = Int.random(in: 0...i)
+            let tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp
+        }
+        return arr
+    }
+
     private func draw() -> [(d: TarotCard, reversed: Bool)] {
-        shuffle(Array(TarotDeck.major)).prefix(Self.drawCount).map { ($0, Bool.random()) }
+        return shuffle(Array(TarotDeck.major)).prefix(Self.drawCount).map { ($0, Bool.random()) }
     }
 
     private func unwind() {
@@ -897,7 +906,7 @@ final class TarotEngine: ObservableObject {
                 cards[i] = c
             }
         }
-        return bestSlotSlot
+        return bestSlot
     }
 
     func tapCard(at index: Int) {
@@ -1142,7 +1151,7 @@ struct PackView: View {
                 .rotation3DEffect(.degrees(180), axis: (x: 0, y: 1, z: 0), perspective: 1400)
             // 正面皮肤（撕裂裁切）
             FrontSkinView(engine: engine)
-                .clipShape(PolyShape(points: engine.bodyClipFront))
+                .clipShape(PolyShape(points: engine.bodyClipFront.map { CGPoint(x: $0[0] / 100 * pw, y: $0[1] / 100 * ph) }))
             // 撕条片 + 撕裂亮边（flap：th/ph 弹簧以前沿为轴）
             ZStack {
                 ForEach(engine.plyStates.indices, id: \.self) { k in
@@ -1537,7 +1546,7 @@ struct CardView: View {
         .rotation3DEffect(.degrees(p[4].x), axis: (x: 0, y: 1, z: 0), perspective: 1400)
         .scaleEffect(p[6].x * persp)
         .position(x: engine.stageW / 2 + p[0].x, y: engine.stageH / 2 - engine.padShift + p[1].x)
-        .zIndex(Int(z))
+        .zIndex(z)
         .onTapGesture {
             if engine.state == .spread {
                 onTapped(c.d, c.reversed, c.slot)
@@ -1574,7 +1583,7 @@ struct CardView: View {
                 ZStack {
                     // RWS 插槽（1909 扫描图裁白边）
                     GeometryReader { geo in
-                        let img = RWSArt.image(for: c.d)
+                        let img = RWSArt.file(c.d.rwsFile)
                         Group {
                             if let img {
                                 Image(uiImage: img)
@@ -1909,7 +1918,7 @@ final class HoloSfx {
         player.play()
         DispatchQueue.main.asyncAfter(deadline: .now() + bufferDuration + 0.1) {
             player.stop()
-            engine.detach(player)
+            self.engine.detach(player)
         }
     }
 
@@ -2081,7 +2090,8 @@ final class HoloSfx {
     }
 
     private static func note(_ i: Int) -> Double {
-        440 * pow(2, (72 + 12 * (i / 5) + [0, 2, 4, 7, 9][i % 5] - 69) / 12)
+        let midi: Double = Double(72 + 12 * (i / 5) + [0, 2, 4, 7, 9][i % 5] - 69)
+        return 440 * pow(2, midi / 12)
     }
 }
 
