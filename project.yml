@@ -22,8 +22,9 @@ targets:
         excludes:
           - "README.md"
           - "docs/**"
-      # 塔罗网页构建产物：文件夹引用整体入包（WKWebView 离线加载 dist/index.html）
-      - path: tarot-web/dist
+          - "Resources/RWSCards/**"
+      # 78 张 RWS 公版图：文件夹引用整体入包（bundle 根目录 RWSCards/）
+      - path: Cresto/Resources/RWSCards
         type: folder
     settings:
       base:
