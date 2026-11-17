@@ -74,6 +74,10 @@ struct TarotView: View {
     /// 撕口位置（占卡包高度比例），与素材撕裂线一致
     private let tearRatio: CGFloat = 0.358
 
+    private var today: DailyTarot? {
+        draws.first { $0.dateKey == TarotService.todayKey }
+    }
+
     var body: some View {
         ZStack(alignment: .top) {
             Theme.bg.ignoresSafeArea()
@@ -858,7 +862,7 @@ struct ParchmentCardView: View {
     private let slotRadius: CGFloat = 6
 
     private var titleText: String {
-        revealed ? "\(card.number) · \(card.nameEn)" : "· · ·"
+        revealed ? "\(card.roman) · \(card.en)" : "· · ·"
     }
 
     private var tiltXDegrees: Double {
@@ -1017,7 +1021,7 @@ struct ParchmentCardView: View {
     private var cardCaption: some View {
         VStack(spacing: 3) {
             HStack(alignment: .firstTextBaseline, spacing: 5) {
-                Text(card.nameZh)
+                Text(card.name)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Theme.text)
                 Text(reversed ? "逆位" : "正位")
