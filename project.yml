@@ -22,6 +22,9 @@ targets:
         excludes:
           - "README.md"
           - "docs/**"
+      # 塔罗网页构建产物：文件夹引用整体入包（WKWebView 离线加载 dist/index.html）
+      - path: tarot-web/dist
+        type: folder
     settings:
       base:
         PRODUCT_NAME: Cresto
