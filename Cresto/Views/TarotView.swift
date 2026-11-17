@@ -136,8 +136,16 @@ final class TarotEngine: ObservableObject {
     var PW: Double = 0
     var PH: Double = 0
     var padShift: Double = 0
-    var skinIndex = -1
+    /// 必须是合法下标：PackView 可能在 onAppear/enter() 之前就渲染首帧，
+    /// 旧值 -1 会让 HoloSkins[-1] 直接数组越界闪退。
+    var skinIndex = Int.random(in: 0..<HoloSkins.count)
+    /// 视图层统一走这里取色，杜绝任何下标越界
+    var skinColor: Color { HoloSkins[min(max(skinIndex, 0), HoloSkins.count - 1)].color }
     var context: ModelContext?
+    /// prepare() 在拿到尺寸前被调用时，延后到 tick() 里真正 enter()
+    var needsEnter = false
+    /// onAppear 只准备一次
+    var prepared = false
 
     // ---- 撕裂 ----
     var jag: [[Double]] = []           // [x, y, line, tooth, metal, bend]
@@ -198,6 +206,8 @@ final class TarotEngine: ObservableObject {
     struct Bit {
         var kind: Int
         var fill: String
+        /// 是否已被 burst() 发射（对应网页版 b.age !== undefined）
+        var launched = false
         var lx: Double = 0, ly: Double = 0, lz: Double = 0
         var inside = true
         var up: Double = 0, a: Double = 0, sp: Double = 0
@@ -268,7 +278,15 @@ final class TarotEngine: ObservableObject {
 
     func prepare(context: ModelContext) {
         self.context = context
-        enter()
+        guard !prepared else { return }
+        prepared = true
+        AppLog.info("塔罗引擎准备 · skin=\(skinIndex) size=\(Int(stageW))x\(Int(stageH))")
+        // 没有尺寸时 enter() 会把卡包/光流按 0 尺寸布局，等首帧 measure 完再进
+        if stageW > 1, stageH > 1 {
+            enter()
+        } else {
+            needsEnter = true
+        }
     }
 
     /// enter()：新包从右侧飞入落定（换配色、重生成撕裂线与光流）
@@ -294,6 +312,7 @@ final class TarotEngine: ObservableObject {
             prz.x = 16
         }
         settleAt = reduce ? t : t + 0.95
+        if !reduce { loadBits() }
         sfx?.arrive()
     }
 
@@ -432,6 +451,12 @@ final class TarotEngine: ObservableObject {
         stageH = size.height
         self.context = context
         measure(size: size, safeBottom: safeBottom)
+        // onAppear 早于首帧尺寸时，这里补齐 enter()
+        if needsEnter {
+            needsEnter = false
+            AppLog.info("塔罗首帧就绪 · \(Int(stageW))x\(Int(stageH))")
+            enter()
+        }
 
         let motion: Double = reduce ? 0 : 1
         let holding = held
@@ -602,6 +627,7 @@ final class TarotEngine: ObservableObject {
     }
 
     private func yAt(_ x: Double) -> Double {
+        guard jag.count > Self.jagCount else { return Self.tearBase }
         let f = clamp(x, 0, 100) / 100 * Double(Self.jagCount)
         let i = min(Self.jagCount - 1, Int(f))
         return jag[i][1] + (jag[i + 1][1] - jag[i][1]) * (f - Double(i))
@@ -640,6 +666,7 @@ final class TarotEngine: ObservableObject {
     var flapTilt = (z: Double(0), x: Double(0))
 
     func clips(_ p: Double) {
+        guard jag.count > Self.jagCount else { return }
         let d = tearDir
         let xt = d > 0 ? p * 100 : 100 - p * 100
         let yt = yAt(xt)
@@ -705,10 +732,18 @@ final class TarotEngine: ObservableObject {
 
     // MARK: 开包后的彩带爆发（burst）
 
+    /// 对应网页版 load()：每包预生成 130 片彩带（kind = 点/条/星，8 色循环）
+    func loadBits() {
+        let palette = HoloBands + ["#ffffff"]
+        for i in 0..<130 {
+            bits.append(Bit(kind: i % 3, fill: palette[i % 8]))
+        }
+    }
+
     func burst() {
-        for i in bits.indices where bits[i].age != nil {}
         for i in bits.indices {
-            if bits[i].age != nil { continue }
+            if bits[i].launched { continue }
+            bits[i].launched = true
             let lx = Double.random(in: 6...94)
             let vt = 260 + 400 * pow(Double.random(in: 0...1), 1.5)
             bits[i].lx = lx
@@ -748,6 +783,7 @@ final class TarotEngine: ObservableObject {
     func stepBits(dt: Double) {
         let cullY = stageH / 2 + 40
         for i in bits.indices {
+            guard bits[i].launched else { continue }
             bits[i].age += dt
             guard bits[i].age >= 0 else { continue }
             if bits[i].inside {
@@ -778,7 +814,7 @@ final class TarotEngine: ObservableObject {
         }
         // 落出屏幕底部即回收（y 相对舞台中心 oy）
         bits.removeAll { b in
-            guard !b.inside, b.age >= 0 else { return false }
+            guard b.launched, !b.inside, b.age >= 0 else { return false }
             return b.y >= cullY || b.age > 4
         }
     }
@@ -1194,7 +1230,7 @@ struct FrontSkinView: View {
         let crimp = ph * 0.068
         ZStack(alignment: .topLeading) {
             // 底色
-            Rectangle().fill(HoloSkins[engine.skinIndex].color)
+            Rectangle().fill(engine.skinColor)
             // 星轨点阵（两层错位）
             StarPrint(tint: 0.4).frame(width: pw, height: ph * 0.9)
             StarPrint(tint: 0.22).frame(width: pw, height: ph * 0.9).offset(x: pw * 0.13, y: ph * 0.11)
@@ -1246,7 +1282,7 @@ struct BackSkinView: View {
         let ph = engine.PH
         let crimp = ph * 0.068
         ZStack {
-            Rectangle().fill(HoloSkins[engine.skinIndex].color)
+            Rectangle().fill(engine.skinColor)
             // 竖向细纹（fin）
             VStack(spacing: 0) {
                 ForEach(0..<24, id: \.self) { _ in
@@ -1297,7 +1333,7 @@ struct PlyView: View {
                 .opacity(ply.underO)
             // 包面片段
             ZStack(alignment: .topLeading) {
-                Rectangle().fill(HoloSkins[engine.skinIndex].color)
+                Rectangle().fill(engine.skinColor)
                 Text("TEAR HERE →")
                     .font(.system(size: pw * 0.029, weight: .bold))
                     .kerning(pw * 0.0035)
@@ -2181,11 +2217,17 @@ struct RWSArtView: View {
 
 enum RWSArt {
     private static var cache: [Int: UIImage] = [:]
+    /// 牌面每帧都会请求图片；磁盘解码必须缓存，否则 60fps 反复解码会卡死/被看门狗杀掉
+    private static let fileCache: NSCache<NSString, UIImage> = {
+        let c = NSCache<NSString, UIImage>()
+        c.countLimit = 32
+        return c
+    }()
 
     static func major(_ index: Int) -> UIImage? {
         let clamped = max(0, min(21, index))
         if let hit = cache[clamped] { return hit }
-        let name = String(format: "major-%02d", clamped)
+        let name = String(format: "maj-%02d", clamped)
         guard let img = file(name + ".jpg") else {
             AppLog.warn("RWS 图缺失：\(name)")
             return nil
@@ -2195,10 +2237,12 @@ enum RWSArt {
     }
 
     static func file(_ name: String) -> UIImage? {
+        if let hit = fileCache.object(forKey: name as NSString) { return hit }
         let base = (name as NSString).deletingPathExtension
         let ext = (name as NSString).pathExtension
         guard let url = Bundle.main.url(forResource: base, withExtension: ext, subdirectory: "RWSCards"),
               let img = UIImage(contentsOfFile: url.path) else { return nil }
+        fileCache.setObject(img, forKey: name as NSString)
         return img
     }
 }
