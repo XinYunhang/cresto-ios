@@ -1561,7 +1561,6 @@ struct CardView: View {
                 .overlay(
                             RadialGradient(colors: [Color(hex: 0xFFFCF1).opacity(0.55), .clear], center: UnitPoint(x: 0.28, y: 0.16), startRadius: 0, endRadius: ch * 0.9)
                         )
-                )
             // 内部：金色内框上方牌名 + 双线金边插槽 + 方位行
             VStack(spacing: 0) {
                 Text("\(c.d.roman) · \(c.d.en.uppercased())")
