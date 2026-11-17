@@ -133,7 +133,7 @@ struct TarotWebContainer: UIViewRepresentable {
         )
         controller.addUserScript(
             WKUserScript(
-                source: """ 
+                source: """
                 window.addEventListener('load', function(){ try { window.webkit.messageHandlers.tarotLog.postMessage('dom-ready: ' + (document.querySelector('.pack-stage') ? 'sealed' : document.querySelector('.fan-stage') ? 'fan' : document.querySelector('.spread-row') ? 'spread' : 'empty') + ', imgs=' + document.images.length) } catch(_) {} });
                 """,
                 injectionTime: .atDocumentEnd,
