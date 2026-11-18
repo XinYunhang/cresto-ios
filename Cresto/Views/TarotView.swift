@@ -17,30 +17,37 @@ struct TarotView: View {
     @State private var detail: TarotDrawnCard?
     @State private var appeared = false
 
+    // 密封卡包 → 撕开 → 三牌阵
+    @State private var isPackOpened = false
+    @State private var showPack = true
+    @State private var packFading = false
+    @State private var cardsRevealed = false
+    @State private var roundID = UUID()
+
     var body: some View {
         GeometryReader { proxy in
             ZStack {
                 Theme.bg.ignoresSafeArea()
 
-                VStack(spacing: 0) {
-                    header
-                        .padding(.top, 10)
-
-                    Spacer(minLength: 12)
-
-                    cardRow(totalWidth: proxy.size.width)
-
-                    Spacer(minLength: 12)
-
-                    Text("轻点牌面查看详解 · 按住拖动看镭射")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.textTertiary)
-                        .padding(.bottom, 12)
-
-                    drawButton
-                        .padding(.bottom, 96)   // 让开底部 4-Tab 悬浮胶囊栏
+                if isPackOpened {
+                    revealedContent(totalWidth: proxy.size.width)
                 }
-                .padding(.horizontal, 16)
+
+                if showPack {
+                    VStack(spacing: 0) {
+                        Spacer(minLength: 0)
+                        TarotPackView(width: 240, height: 350) {
+                            handlePackOpened()
+                        }
+                        .id(roundID)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 96)
+                    .scaleEffect(packFading ? 0.88 : 1)
+                    .opacity(packFading ? 0 : 1)
+                    .allowsHitTesting(!packFading)
+                }
             }
         }
         .sheet(item: $detail) { item in
@@ -51,8 +58,31 @@ struct TarotView: View {
         .onAppear {
             guard !appeared else { return }
             appeared = true
-            redraw(commit: true)
+            prepareRound()
         }
+    }
+
+    /// 原有三牌阵视图（尺寸/排版/底部避让保持不变）
+    private func revealedContent(totalWidth: CGFloat) -> some View {
+        VStack(spacing: 0) {
+            header
+                .padding(.top, 10)
+
+            Spacer(minLength: 12)
+
+            cardRow(totalWidth: totalWidth)
+
+            Spacer(minLength: 12)
+
+            Text("轻点牌面查看详解 · 按住拖动看镭射")
+                .font(.system(size: 11))
+                .foregroundStyle(Theme.textTertiary)
+                .padding(.bottom, 12)
+
+            drawButton
+                .padding(.bottom, 96)   // 让开底部 4-Tab 悬浮胶囊栏
+        }
+        .padding(.horizontal, 16)
     }
 
     // MARK: 头部
@@ -77,10 +107,19 @@ struct TarotView: View {
         // 向下取整，避免小数宽度累积后挤出屏幕
         let cardWidth = max(60, ((totalWidth - 48) / 3).rounded(.down))
         return HStack(alignment: .center, spacing: 8) {
-            ForEach(cards) { item in
+            ForEach(cards.indices, id: \.self) { index in
+                let item = cards[index]
                 TarotCardView(drawn: item, width: cardWidth) {
                     detail = item
                 }
+                // 只加透明度/缩放入场，不改变任何尺寸与排版
+                .opacity(cardsRevealed ? 1 : 0)
+                .scaleEffect(cardsRevealed ? 1 : 0.92)
+                .animation(
+                    .spring(response: 0.48, dampingFraction: 0.76)
+                        .delay(Double(index) * 0.06),
+                    value: cardsRevealed
+                )
                 .transition(.asymmetric(
                     insertion: .offset(y: 30).combined(with: .opacity),
                     removal: .opacity
@@ -96,7 +135,7 @@ struct TarotView: View {
 
     private var drawButton: some View {
         Button {
-            redraw(commit: true)
+            resetRound()
         } label: {
             Text("重新抽牌 · Draw again")
                 .font(.system(size: 14.5, weight: .medium))
@@ -129,22 +168,47 @@ struct TarotView: View {
         }
     }
 
-    private func redraw(commit: Bool) {
-        let drawn = Self.drawCards()
-        guard drawn.count == 3 else { return }
+    /// 抽 3 张新牌但先藏在密封卡包后面
+    private func prepareRound() {
+        cards = Self.drawCards()
+        cardsRevealed = false
+        isPackOpened = false
+        showPack = true
+        packFading = false
+        roundID = UUID()
+    }
 
-        withAnimation(.spring(response: 0.55, dampingFraction: 0.85)) {
-            cards = drawn
+    /// 重新抽牌：换 3 张新牌并回到密封卡包状态
+    private func resetRound() {
+        prepareRound()
+    }
+
+    /// 撕开成功：同一帧淡出卡包 + 三张牌错峰弹入
+    private func handlePackOpened() {
+        guard !isPackOpened else { return }
+        isPackOpened = true
+
+        withAnimation(.easeOut(duration: 0.3)) {
+            packFading = true
         }
 
-        if commit {
-            persist(drawn)
-        }
+        persist(cards)
 
-        let summary = drawn
+        let summary = cards
             .map { "\($0.position.shortName)\($0.card.name)\($0.reversed ? "逆位" : "正位")" }
             .joined(separator: " · ")
-        AppLog.info("塔罗三牌阵已抽取：\(summary)")
+        AppLog.info("塔罗拆包：\(summary)")
+
+        // 先让三张牌以隐藏态入树，再开启错峰弹入
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) {
+            if isPackOpened { cardsRevealed = true }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.34) {
+            if isPackOpened {
+                showPack = false
+                packFading = false
+            }
+        }
     }
 
     /// 把这次三牌阵同步到「今日塔罗」，首页小卡显示“现在”位
@@ -556,6 +620,396 @@ struct TarotCardThumbnail: View {
                 .strokeBorder(Color(hex: 0xC5A059), lineWidth: 1.5)
         )
         .shadow(color: .black.opacity(0.18), radius: 6, y: 3)
+    }
+}
+
+// MARK: - 密封铝箔卡包（前置撕开状态）
+
+struct TarotPackView: View {
+    var width: CGFloat = 240
+    var height: CGFloat = 350
+    var onOpened: () -> Void
+
+    @State private var tilt: CGSize = .zero
+    @State private var tearProgress: CGFloat = 0
+    @State private var draggingTear = false
+    @State private var lastTickStep = 0
+    @State private var hintVisible = true
+    @State private var hintPulse = false
+    @State private var stripFlown = false
+    @State private var opened = false
+
+    private let tearBandY: CGFloat = 44
+    private var gold: Color { Color(hex: 0xD9BE7E) }
+
+    var body: some View {
+        let maxTilt: CGFloat = 10
+        let tiltX = max(-maxTilt, min(maxTilt, -tilt.height / 18))
+        let tiltY = max(-maxTilt, min(maxTilt, tilt.width / 18))
+
+        return ZStack {
+            ambientGlow
+            packBody
+            topStrip
+            hintIcon   // 放在封条之上，虚线左端完整可见
+        }
+        .frame(width: width, height: height)
+        .rotation3DEffect(.degrees(Double(tiltX)), axis: (x: 1, y: 0, z: 0), perspective: 0.5)
+        .rotation3DEffect(.degrees(Double(tiltY)), axis: (x: 0, y: 1, z: 0), perspective: 0.5)
+        .contentShape(Rectangle())
+        .gesture(packGesture)
+    }
+
+    // MARK: 袋身
+
+    private var packBody: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [Color(hex: 0x12192C), Color(hex: 0x1E2B4A), Color(hex: 0x141D33)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+
+            // 斜向铝箔反光
+            LinearGradient(
+                colors: [.white.opacity(0.07), .clear, .white.opacity(0.03)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+            // 左右纵向圆柱高光带
+            cylinderHighlight.position(x: width * 0.14, y: height / 2)
+            cylinderHighlight.position(x: width * 0.86, y: height / 2)
+
+            // 上下精细锯齿封口边
+            SerratedEdge(teeth: 32)
+                .fill(Color.white.opacity(0.16))
+                .frame(width: width, height: 5)
+                .position(x: width / 2, y: 3)
+            SerratedEdge(teeth: 32)
+                .fill(Color.white.opacity(0.12))
+                .frame(width: width, height: 5)
+                .scaleEffect(y: -1)
+                .position(x: width / 2, y: height - 3)
+
+            // 中央香槟金星月线稿
+            TarotPackEmblem()
+                .frame(width: 74, height: 74)
+                .position(x: width / 2, y: 126)
+
+            Text("TAROT")
+                .font(.system(size: 25, weight: .light, design: .serif))
+                .kerning(8)
+                .foregroundStyle(gold)
+                .position(x: width / 2, y: 190)
+
+            Text("三牌阵 · PAST · PRESENT · FUTURE")
+                .font(.system(size: 7.5, weight: .medium, design: .serif))
+                .kerning(1.1)
+                .foregroundStyle(Color.white.opacity(0.55))
+                .position(x: width / 2, y: 214)
+
+            Rectangle()
+                .fill(gold.opacity(0.32))
+                .frame(width: 54, height: 0.7)
+                .position(x: width / 2, y: 232)
+
+            Text("78 CARDS · RWS 1909")
+                .font(.system(size: 7, weight: .medium, design: .serif))
+                .kerning(1.6)
+                .foregroundStyle(Color.white.opacity(0.30))
+                .position(x: width / 2, y: height - 44)
+
+            // 撕口金色光芒（随进度从左向右延伸）
+            if tearProgress > 0.001 {
+                ZStack {
+                    Rectangle()
+                        .fill(Color(hex: 0xFFC86B).opacity(0.55))
+                        .frame(width: max(1, width * tearProgress), height: 12)
+                        .blur(radius: 7)
+                    Rectangle()
+                        .fill(
+                            LinearGradient(
+                                colors: [Color(hex: 0xFFE2A6).opacity(0.1), Color(hex: 0xFFD37A), .white.opacity(0.95)],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .frame(width: max(1, width * tearProgress), height: 2)
+                }
+                .position(x: width * tearProgress / 2 + 4, y: tearBandY)
+            }
+
+            // 虚线撕口 + 提示
+            DashedLine()
+                .stroke(Color.white.opacity(0.55), style: StrokeStyle(lineWidth: 1, dash: [5, 5]))
+                .frame(width: width - 34, height: 1)
+                .position(x: width / 2, y: tearBandY)
+
+            Text("TEAR HERE")
+                .font(.system(size: 8, weight: .semibold, design: .serif))
+                .kerning(2.4)
+                .foregroundStyle(Color.white.opacity(0.55))
+                .position(x: width / 2, y: tearBandY + 13)
+        }
+        .frame(width: width, height: height)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.8)
+        )
+        .shadow(color: .black.opacity(0.55), radius: 22, x: 0, y: 20)
+    }
+
+    // MARK: 可撕封条
+
+    private var topStrip: some View {
+        let angle = stripFlown ? 25.0 : -18.0 * Double(tearProgress)
+        let depth = stripFlown ? 0.0 : -34.0 * Double(tearProgress)
+
+        return ZStack {
+            UnevenRoundedRectangle(
+                topLeadingRadius: 12,
+                bottomLeadingRadius: 0,
+                bottomTrailingRadius: 0,
+                topTrailingRadius: 12,
+                style: .continuous
+            )
+            .fill(
+                LinearGradient(
+                    colors: [Color(hex: 0x26355A), Color(hex: 0x17203A)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            )
+            LinearGradient(colors: [.white.opacity(0.10), .clear], startPoint: .top, endPoint: .bottom)
+
+            SerratedEdge(teeth: 32)
+                .fill(Color.white.opacity(0.18))
+                .frame(width: width, height: 5)
+                .position(x: width / 2, y: 3)
+
+            Rectangle()
+                .fill(Color.white.opacity(0.10))
+                .frame(height: 0.8)
+                .position(x: width / 2, y: 43)
+        }
+        .frame(width: width, height: 44)
+        .clipShape(
+            UnevenRoundedRectangle(
+                topLeadingRadius: 12,
+                bottomLeadingRadius: 0,
+                bottomTrailingRadius: 0,
+                topTrailingRadius: 12,
+                style: .continuous
+            )
+        )
+        .position(x: width / 2, y: 22)
+        .rotation3DEffect(.degrees(depth), axis: (x: 1, y: 0, z: 0), anchor: .leading, perspective: 0.5)
+        .rotationEffect(.degrees(angle), anchor: .leading)
+        .offset(
+            x: stripFlown ? width * 0.6 : 0,
+            y: stripFlown ? -height * 0.55 : -6 * tearProgress
+        )
+        .opacity(stripFlown ? 0 : 1)
+        .shadow(color: .black.opacity(0.28), radius: 6, x: 0, y: 4)
+    }
+
+    private var hintIcon: some View {
+        ZStack {
+            Circle()
+                .fill(gold.opacity(0.22))
+                .frame(width: 26, height: 26)
+                .blur(radius: 5)
+                .scaleEffect(hintPulse ? 1.18 : 0.86)
+            Image(systemName: "hand.point.right.fill")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(gold)
+        }
+        .position(x: 24, y: tearBandY)
+        .opacity(hintVisible ? 1 : 0)
+        .animation(.easeOut(duration: 0.16), value: hintVisible)
+        .onAppear {
+            withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
+                hintPulse = true
+            }
+        }
+    }
+
+    private var ambientGlow: some View {
+        Ellipse()
+            .fill(
+                RadialGradient(
+                    colors: [gold.opacity(0.22), .clear],
+                    center: .center,
+                    startRadius: 0,
+                    endRadius: width * 0.6
+                )
+            )
+            .frame(width: width * 1.15, height: 54)
+            .blur(radius: 10)
+            .offset(y: height / 2 + 6)
+            .allowsHitTesting(false)
+    }
+
+    private var cylinderHighlight: some View {
+        LinearGradient(
+            stops: [
+                .init(color: .clear, location: 0),
+                .init(color: .white.opacity(0.16), location: 0.35),
+                .init(color: .white.opacity(0.05), location: 0.62),
+                .init(color: .clear, location: 1)
+            ],
+            startPoint: .leading,
+            endPoint: .trailing
+        )
+        .frame(width: width * 0.13, height: height * 0.88)
+        .blur(radius: 1.5)
+    }
+
+    // MARK: 手势
+
+    private var packGesture: some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                if hintVisible { hintVisible = false }
+                guard !opened else { return }
+
+                let inTearBand = abs(value.startLocation.y - tearBandY) <= 36
+                let horizontalRight = value.translation.width > 0
+                    && abs(value.translation.width) > abs(value.translation.height) * 0.6
+
+                if inTearBand && horizontalRight {
+                    draggingTear = true
+                    tearProgress = min(max(value.translation.width / 180, 0), 1)
+
+                    let step = Int(value.translation.width / 12)
+                    if step > lastTickStep {
+                        UISelectionFeedbackGenerator().selectionChanged()
+                        lastTickStep = step
+                    }
+                } else if !inTearBand, !draggingTear {
+                    tilt = value.translation
+                }
+            }
+            .onEnded { _ in
+                guard !opened else { return }
+                if draggingTear {
+                    draggingTear = false
+                    if tearProgress >= 0.72 {
+                        finishTearOpen()
+                    } else {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.72)) {
+                            tearProgress = 0
+                        }
+                        lastTickStep = 0
+                    }
+                } else {
+                    lastTickStep = 0
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.72)) {
+                        tilt = .zero
+                    }
+                }
+            }
+    }
+
+    private func finishTearOpen() {
+        guard !opened else { return }
+        opened = true
+        tearProgress = 1
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        withAnimation(.easeIn(duration: 0.3)) {
+            stripFlown = true
+        }
+        onOpened()
+    }
+}
+
+// MARK: - 卡包装饰图形
+
+struct SerratedEdge: Shape {
+    var teeth: Int = 32
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        guard teeth > 0, rect.width > 0 else { return path }
+        let tooth = rect.width / CGFloat(teeth)
+        path.move(to: CGPoint(x: rect.minX, y: rect.maxY))
+        for i in 0..<teeth {
+            let x = rect.minX + CGFloat(i) * tooth
+            path.addLine(to: CGPoint(x: x + tooth / 2, y: rect.minY))
+            path.addLine(to: CGPoint(x: x + tooth, y: rect.maxY))
+        }
+        path.closeSubpath()
+        return path
+    }
+}
+
+struct DashedLine: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.midY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.midY))
+        return path
+    }
+}
+
+/// 极简香槟金星月几何线稿
+struct TarotPackEmblem: View {
+    var body: some View {
+        Canvas { ctx, size in
+            let line = Color(hex: 0xD9BE7E)
+            let center = CGPoint(x: size.width / 2, y: size.height / 2)
+
+            ctx.stroke(
+                Path(ellipseIn: CGRect(x: 2, y: 2, width: size.width - 4, height: size.height - 4)),
+                with: .color(line.opacity(0.35)),
+                lineWidth: 0.7
+            )
+
+            var moon = Path()
+            moon.addArc(
+                center: CGPoint(x: center.x - size.width * 0.12, y: center.y - size.height * 0.10),
+                radius: size.width * 0.24,
+                startAngle: .degrees(60),
+                endAngle: .degrees(300),
+                clockwise: false
+            )
+            ctx.stroke(moon, with: .color(line.opacity(0.9)), lineWidth: 1.1)
+
+            var star = Path()
+            let cx = center.x + size.width * 0.16
+            let cy = center.y - size.height * 0.12
+            let outer = size.width * 0.19
+            let inner = size.width * 0.055
+            for i in 0..<16 {
+                let angle = Double(i) * Double.pi / 8 - Double.pi / 2
+                let radius = i % 2 == 0 ? outer : inner
+                let point = CGPoint(
+                    x: cx + CGFloat(cos(angle)) * radius,
+                    y: cy + CGFloat(sin(angle)) * radius
+                )
+                if i == 0 { star.move(to: point) } else { star.addLine(to: point) }
+            }
+            star.closeSubpath()
+            ctx.stroke(star, with: .color(line), lineWidth: 0.9)
+
+            for i in 0..<3 {
+                let angle = Double(i) * 2 * Double.pi / 3 + 0.4
+                let point = CGPoint(
+                    x: center.x + CGFloat(cos(angle)) * size.width * 0.36,
+                    y: center.y + CGFloat(sin(angle)) * size.height * 0.28
+                )
+                ctx.fill(
+                    Path(ellipseIn: CGRect(x: point.x - 1.1, y: point.y - 1.1, width: 2.2, height: 2.2)),
+                    with: .color(line.opacity(0.75))
+                )
+            }
+        }
     }
 }
 
