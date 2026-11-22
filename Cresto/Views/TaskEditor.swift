@@ -112,6 +112,8 @@ struct TaskEditor: View {
         UrgencySlider(selection: $urgency)
             .padding(.vertical, 4)
             .cardSurface()
+            // 射线粒子允许溢出滑块场，但裁切在卡片内（spec：卡片允许粒子溢出，场景边界裁切）
+            .clipShape(RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous))
     }
 
     // MARK: 时间

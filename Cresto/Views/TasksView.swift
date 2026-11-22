@@ -23,6 +23,8 @@ struct TasksView: View {
     @State private var showCompleted = false
     /// 当前左滑展开的行（同一时间最多一条）
     @State private var swipedID: UUID?
+    /// 当前元数据堆叠展开的行（互斥：切行时前一行收、新一行同时展）
+    @State private var expandedMetaID: UUID?
 
     private var grouped: [TaskGroup: [TaskItem]] {
         Dictionary(grouping: openTasks) { TaskGroup.group(for: $0.dueDate) }
@@ -59,8 +61,9 @@ struct TasksView: View {
             .padding(.horizontal, Theme.screenPadding)
             .padding(.bottom, 132)
             .simultaneousGesture(TapGesture().onEnded {
-                // 点任意空白/其他行处收起左滑删除块（simultaneous，不影响行内按钮）
+                // 点任意空白/其他行处收起左滑删除块与元数据堆叠（simultaneous，不影响行内按钮）
                 if swipedID != nil { swipedID = nil }
+                if expandedMetaID != nil { expandedMetaID = nil }
             })
         }
         .floatingAddButton("新建待办") {
@@ -106,6 +109,7 @@ struct TasksView: View {
                 SwipeableTaskRow(
                     task: task,
                     swipedID: $swipedID,
+                    expandedMetaID: $expandedMetaID,
                     onTap: {
                         editing = task
                         isEditorPresented = true
@@ -138,6 +142,7 @@ struct TasksView: View {
                     SwipeableTaskRow(
                         task: task,
                         swipedID: $swipedID,
+                        expandedMetaID: $expandedMetaID,
                         onTap: {
                             editing = task
                             isEditorPresented = true
@@ -260,6 +265,7 @@ struct TodayProgressRing: View {
 private struct SwipeableTaskRow: View {
     let task: TaskItem
     @Binding var swipedID: UUID?
+    @Binding var expandedMetaID: UUID?
     let onTap: () -> Void
     let onDelete: () -> Void
 
@@ -310,7 +316,7 @@ private struct SwipeableTaskRow: View {
             .opacity(revealProgress)
             .allowsHitTesting(isSwiped)
 
-            TaskRowView(task: task, onTap: onTap)
+            TaskRowView(task: task, expandedMetaID: $expandedMetaID, onTap: onTap)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 12)
                 .background(
@@ -370,16 +376,18 @@ private struct SwipeableTaskRow: View {
 /// 卡底、左滑手势与删除块由 SwipeableTaskRow 包一层，这里保持透明可复用。
 struct TaskRowView: View {
     @Environment(\.modelContext) private var context
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let task: TaskItem
     var compact = false
+    /// 互斥展开（spec：只有当前行展开，切行时前一行收、新一行同时展）；首页 compact 行为 nil
+    var expandedMetaID: Binding<UUID?>? = nil
     var onTap: (() -> Void)?
 
-    /// stacked-metadata 展开态：轻触堆叠固定展开，再点收起
-    @State private var metaExpanded = false
+    private var isMetaExpanded: Bool { expandedMetaID?.wrappedValue == task.id }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 11) {
+        HStack(alignment: .center, spacing: 11) {
             Button {
                 withAnimation(.snappy(duration: 0.22)) {
                     TaskActions.toggle(task, in: context)
@@ -401,27 +409,25 @@ struct TaskRowView: View {
             .buttonStyle(.plain)
             .accessibilityLabel(task.isCompleted ? "标记为未完成" : "标记为完成")
 
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(alignment: .center, spacing: 8) {
-                    Text(task.title)
-                        .font(.system(size: 14))
-                        .foregroundStyle(task.isCompleted ? Theme.textTertiary : Theme.text)
-                        .strikethrough(task.isCompleted, color: Theme.textTertiary)
-                        .lineLimit(2)
+            HStack(alignment: .center, spacing: 8) {
+                Text(task.title)
+                    .font(.system(size: 14))
+                    .foregroundStyle(task.isCompleted ? Theme.textTertiary : Theme.text)
+                    .strikethrough(task.isCompleted, color: Theme.textTertiary)
+                    .lineLimit(compact ? 2 : 1)
+                    .truncationMode(compact ? .tail : .clip)
+                    .modifier(TitleFadeModifier(active: !compact))
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
-                    if !compact {
-                        Spacer(minLength: 6)
-                        MetaStack(chips: metaChips, isExpanded: $metaExpanded)
-                    }
-                }
-
-                if !compact, metaExpanded, !metaChips.isEmpty {
-                    ChipFlowLayout(spacing: 5) {
-                        ForEach(metaChips) { chip in
-                            metaChipView(chip)
+                if !compact {
+                    MetaStack(
+                        chips: metaChips,
+                        isExpanded: isMetaExpanded,
+                        reduceMotion: reduceMotion,
+                        onToggle: {
+                            expandedMetaID?.wrappedValue = (expandedMetaID?.wrappedValue == task.id) ? nil : task.id
                         }
-                    }
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    )
                 }
             }
 
@@ -467,6 +473,9 @@ struct TaskRowView: View {
         if let due = task.dueDate {
             chips.append(MetaChipData(icon: "calendar", text: due.taskLabel(hasTime: task.hasTime)))
         }
+        for tag in task.tags.prefix(1) {
+            chips.append(MetaChipData(icon: "tag", text: tag))
+        }
         if task.reminder != .none {
             chips.append(MetaChipData(icon: "bell", text: task.reminder.title))
         }
@@ -476,26 +485,7 @@ struct TaskRowView: View {
         if !task.subtasks.isEmpty {
             chips.append(MetaChipData(icon: "checklist", text: "\(task.doneSubtaskCount)/\(task.subtasks.count)"))
         }
-        for tag in task.tags {
-            chips.append(MetaChipData(icon: "tag", text: tag))
-        }
         return chips
-    }
-
-    private func metaChipView(_ chip: MetaChipData) -> some View {
-        HStack(spacing: 4) {
-            Image(systemName: chip.icon)
-                .font(.system(size: 8.5, weight: .medium))
-            Text(chip.text)
-                .font(.system(size: 10))
-                .lineLimit(1)
-        }
-        .foregroundStyle(chip.emphasized ? Theme.text : Theme.textTertiary)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(Capsule().fill(Color.white.opacity(chip.emphasized ? 0.12 : 0.07)))
-        .overlay(Capsule().strokeBorder(chip.emphasized ? Theme.stroke : Color.clear, lineWidth: 1))
-        .fixedSize()
     }
 }
 
@@ -509,61 +499,79 @@ struct MetaChipData: Identifiable {
     var emphasized = false
 }
 
-/// stacked-metadata 的纯原生复刻：收起时胶囊相互叠放为一组（为标题留空间），
-/// 轻触固定展开（deepmost 优先，不抢左滑与滚动手势），再点收起。
+/// stacked-metadata 复刻（按 materials/leibox/stacked-metadata 复刻提示词）：
+/// 三枚胶囊右锚叠放（重叠 o=32、展开间隙 g=4，小屏规格），展开时最右锚点不动、
+/// 其余向左铺开；同一个原生弹簧 p（response:0.48/dampingFraction:0.76 ≈ 规格 m=1/k=175/c=20）
+/// 驱动全部位移，允许过冲；快速切行只换目标保留速度；标签节点身份稳定。
+/// 互斥（只有当前行展开、切行反向同动）由外部 expandedMetaID 管理；iPhone 无 hover，
+/// 主交互走规格已有的「轻触固定 / 再点收起 / 点其他行切换」。
 private struct MetaStack: View {
     let chips: [MetaChipData]
-    @Binding var isExpanded: Bool
+    let isExpanded: Bool
+    let reduceMotion: Bool
+    let onToggle: () -> Void
+
+    /// 小屏规格：重叠量 o=32，展开间隙 g=4
+    private let overlap: CGFloat = 32
+    private let gap: CGFloat = 4
 
     var body: some View {
-        Button {
-            withAnimation(.snappy(duration: 0.25)) { isExpanded.toggle() }
-        } label: {
-            // 收起：叠放（右侧最上层，向左逐层垫底）；展开：收成一枚「收起」指示
-            HStack(spacing: isExpanded ? 4 : -14) {
-                if isExpanded {
-                    Image(systemName: "chevron.up.2")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(Theme.textTertiary)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Capsule().fill(Color.white.opacity(0.07)))
-                } else {
-                    let visible = Array(chips.prefix(3).enumerated().reversed())
-                    ForEach(visible, id: \.element.id) { pair in
-                        MetaChipInline(icon: pair.element.icon, text: pair.element.text, emphasized: pair.element.emphasized)
-                    }
+        Button(action: onToggle) {
+            HStack(spacing: gap) {
+                let visible = Array(chips.prefix(3))
+                ForEach(visible.indices, id: \.self) { index in
+                    MetaChipInline(chip: visible[index])
+                        // 静止 translateX(i×o)（最右锚点不动，其余向右叠入）；展开回 0：从右向左铺开
+                        .offset(x: CGFloat(2 - index) * overlap * (isExpanded ? 0 : 1))
                 }
             }
-            .animation(.snappy(duration: 0.25), value: isExpanded)
         }
         .buttonStyle(.plain)
+        .animation(reduceMotion ? nil : .spring(response: 0.48, dampingFraction: 0.76), value: isExpanded)
         .disabled(chips.isEmpty)
         .opacity(chips.isEmpty ? 0 : 1)
-        .accessibilityLabel(chips.isEmpty ? "" : (isExpanded ? "收起元数据" : "展开元数据"))
+        .accessibilityValue(isExpanded ? "已展开" : "已收起")
     }
 }
 
-/// 叠放态用的单枚胶囊（紧凑版）
+/// 单枚元数据胶囊（spec 小屏当量：9px 水平内边距、4px 图标间距、3px 同场景背景色描边=重叠分界）
 private struct MetaChipInline: View {
-    let icon: String
-    let text: String
-    let emphasized: Bool
+    let chip: MetaChipData
 
     var body: some View {
         HStack(spacing: 4) {
-            Image(systemName: icon)
-                .font(.system(size: 8.5, weight: .medium))
-            Text(text)
-                .font(.system(size: 10))
+            Image(systemName: chip.icon)
+                .font(.system(size: 10, weight: .medium))
+            Text(chip.text)
+                .font(.system(size: 10.5))
                 .lineLimit(1)
         }
-        .foregroundStyle(emphasized ? Theme.text : Theme.textTertiary)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(Capsule().fill(Color.white.opacity(emphasized ? 0.12 : 0.07)))
-        .overlay(Capsule().strokeBorder(emphasized ? Theme.stroke : Color.clear, lineWidth: 1))
+        .foregroundStyle(chip.emphasized ? Theme.text : Theme.textTertiary)
+        .padding(.horizontal, 9)
+        .frame(height: 26)
+        .background(Capsule().fill(Theme.surfaceRaised))
+        .overlay(Capsule().strokeBorder(Theme.surface, lineWidth: 3))
         .fixedSize()
+    }
+}
+
+/// 标题末端渐隐（spec：不用省略号，标题不平移只收窄；一级列表行启用）
+struct TitleFadeModifier: ViewModifier {
+    let active: Bool
+
+    func body(content: Content) -> some View {
+        if active {
+            content.mask {
+                Rectangle()
+                    .fill(Color.black)
+                    .overlay(alignment: .trailing) {
+                        LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing)
+                            .frame(width: 16)
+                    }
+            }
+        } else {
+            content
+        }
     }
 }
 
