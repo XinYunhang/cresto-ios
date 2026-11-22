@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// 第 4 Tab：DeepSeek 峰谷状态 + API 余额。
 ///

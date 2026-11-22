@@ -63,13 +63,13 @@ enum TariffClock {
     }
 
     static func moment(now: Date = Date()) -> TariffMoment {
-        let calendar = calendar
+        let calendar = Self.calendar
         let weekday = calendar.component(.weekday, from: now) // 1 = 周日
         let isWeekend = weekday == 1 || weekday == 7
-        let period = isWeekend ? TariffPeriod.valley : period(for: calendar.component(.hour, from: now))
-        let next = nextBoundary(after: now, calendar: calendar, current: period)
+        let current = isWeekend ? TariffPeriod.valley : Self.period(for: calendar.component(.hour, from: now))
+        let next = nextBoundary(after: now, calendar: calendar, current: current)
         return TariffMoment(
-            period: period,
+            period: current,
             isWeekend: isWeekend,
             secondsUntilSwitch: max(0, next.0.timeIntervalSince(now)),
             nextPeriod: next.1

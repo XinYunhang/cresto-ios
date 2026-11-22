@@ -9,7 +9,7 @@ enum KeychainService {
     static let service = "com.xinyunhang.cresto.deepseek"
     static let account = "apiKey"
 
-    enum KeychainError: LocalizedError {
+    struct KeychainError: LocalizedError {
         let status: OSStatus
 
         var errorDescription: String? {
