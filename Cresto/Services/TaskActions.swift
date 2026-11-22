@@ -42,7 +42,8 @@ enum TaskActions {
             priority: task.priority,
             reminder: task.reminder,
             repeatKind: task.repeatKind,
-            tags: task.tags
+            tags: task.tags,
+            urgency: task.urgency
         )
         next.seriesId = series
         context.insert(next)

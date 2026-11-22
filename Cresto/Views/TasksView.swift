@@ -365,7 +365,8 @@ private struct SwipeableTaskRow: View {
 
 // MARK: - 行内容
 
-/// 行的可见内容（勾选框 + 文案 + 元信息）。首页 OverviewView 的 compact 行也用它。
+/// 行的可见内容（勾选框 + 标题 + 元数据堆叠）。首页 OverviewView 的 compact 行也用它
+/// （compact 不带堆叠元数据，保持首页卡内轻量）。
 /// 卡底、左滑手势与删除块由 SwipeableTaskRow 包一层，这里保持透明可复用。
 struct TaskRowView: View {
     @Environment(\.modelContext) private var context
@@ -374,8 +375,11 @@ struct TaskRowView: View {
     var compact = false
     var onTap: (() -> Void)?
 
+    /// stacked-metadata 展开态：轻触堆叠固定展开，再点收起
+    @State private var metaExpanded = false
+
     var body: some View {
-        HStack(spacing: 11) {
+        HStack(alignment: .top, spacing: 11) {
             Button {
                 withAnimation(.snappy(duration: 0.22)) {
                     TaskActions.toggle(task, in: context)
@@ -397,58 +401,36 @@ struct TaskRowView: View {
             .buttonStyle(.plain)
             .accessibilityLabel(task.isCompleted ? "标记为未完成" : "标记为完成")
 
-            VStack(alignment: .leading, spacing: 3) {
-                Text(task.title)
-                    .font(.system(size: 14))
-                    .foregroundStyle(task.isCompleted ? Theme.textTertiary : Theme.text)
-                    .strikethrough(task.isCompleted, color: Theme.textTertiary)
-                    .lineLimit(2)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .center, spacing: 8) {
+                    Text(task.title)
+                        .font(.system(size: 14))
+                        .foregroundStyle(task.isCompleted ? Theme.textTertiary : Theme.text)
+                        .strikethrough(task.isCompleted, color: Theme.textTertiary)
+                        .lineLimit(2)
 
-                if !compact {
-                    HStack(spacing: 8) {
-                        if let due = task.dueDate {
-                            HStack(spacing: 3) {
-                                Image(systemName: "calendar").font(.system(size: 9))
-                                Text(due.taskLabel(hasTime: task.hasTime))
-                            }
-                            .font(.system(size: 11))
-                            .foregroundStyle(task.isOverdue ? Theme.text : Theme.textTertiary)
-                        }
+                    if !compact {
+                        Spacer(minLength: 6)
+                        MetaStack(chips: metaChips, isExpanded: $metaExpanded)
+                    }
+                }
 
-                        if !task.subtasks.isEmpty {
-                            HStack(spacing: 3) {
-                                Image(systemName: "checklist").font(.system(size: 9))
-                                Text("\(task.doneSubtaskCount)/\(task.subtasks.count)")
-                            }
-                            .font(.system(size: 11))
-                            .foregroundStyle(Theme.textTertiary)
-                        }
-
-                        ForEach(task.tags.prefix(2), id: \.self) { tag in
-                            Text(tag)
-                                .font(.system(size: 10))
-                                .foregroundStyle(Theme.textTertiary)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 1)
-                                .overlay(Capsule().strokeBorder(Color.white.opacity(0.10), lineWidth: 1))
+                if !compact, metaExpanded, !metaChips.isEmpty {
+                    ChipFlowLayout(spacing: 5) {
+                        ForEach(metaChips) { chip in
+                            metaChipView(chip)
                         }
                     }
+                    .transition(.opacity.combined(with: .move(edge: .top)))
                 }
             }
 
-            Spacer(minLength: 8)
-
-            if let due = task.dueDate, !task.isCompleted {
+            if compact, let due = task.dueDate, !task.isCompleted {
+                Spacer(minLength: 8)
                 Text(due.taskLabel(hasTime: task.hasTime))
                     .font(.system(size: 11))
                     .monospacedDigit()
                     .foregroundStyle(task.isOverdue ? Theme.text : Theme.textTertiary)
-            }
-
-            if task.priority == .high {
-                Image(systemName: "exclamationmark")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Theme.text)
             }
         }
         .contentShape(Rectangle())
@@ -467,6 +449,162 @@ struct TaskRowView: View {
             } label: {
                 Label("删除", systemImage: "trash")
             }
+        }
+    }
+
+    // MARK: stacked-metadata
+
+    /// 元数据胶囊：紧急程度 / 日期 / 提醒 / 重复 / 子任务 / 标签
+    private var metaChips: [MetaChipData] {
+        var chips: [MetaChipData] = []
+        if task.urgency != .low {
+            chips.append(MetaChipData(
+                icon: task.urgency.isGalaxy ? "sparkles" : "bolt",
+                text: task.urgency.title,
+                emphasized: task.urgency.isGalaxy
+            ))
+        }
+        if let due = task.dueDate {
+            chips.append(MetaChipData(icon: "calendar", text: due.taskLabel(hasTime: task.hasTime)))
+        }
+        if task.reminder != .none {
+            chips.append(MetaChipData(icon: "bell", text: task.reminder.title))
+        }
+        if task.repeatKind != .none {
+            chips.append(MetaChipData(icon: "arrow.triangle.2.circlepath", text: task.repeatKind.title))
+        }
+        if !task.subtasks.isEmpty {
+            chips.append(MetaChipData(icon: "checklist", text: "\(task.doneSubtaskCount)/\(task.subtasks.count)"))
+        }
+        for tag in task.tags {
+            chips.append(MetaChipData(icon: "tag", text: tag))
+        }
+        return chips
+    }
+
+    private func metaChipView(_ chip: MetaChipData) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: chip.icon)
+                .font(.system(size: 8.5, weight: .medium))
+            Text(chip.text)
+                .font(.system(size: 10))
+                .lineLimit(1)
+        }
+        .foregroundStyle(chip.emphasized ? Theme.text : Theme.textTertiary)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Capsule().fill(Color.white.opacity(chip.emphasized ? 0.12 : 0.07)))
+        .overlay(Capsule().strokeBorder(chip.emphasized ? Theme.stroke : Color.clear, lineWidth: 1))
+        .fixedSize()
+    }
+}
+
+// MARK: - 元数据堆叠（stacked-metadata 复刻）
+
+struct MetaChipData: Identifiable {
+    let id = UUID()
+    let icon: String
+    let text: String
+    /// Galaxy 等高亮档
+    var emphasized = false
+}
+
+/// stacked-metadata 的纯原生复刻：收起时胶囊相互叠放为一组（为标题留空间），
+/// 轻触固定展开（deepmost 优先，不抢左滑与滚动手势），再点收起。
+private struct MetaStack: View {
+    let chips: [MetaChipData]
+    @Binding var isExpanded: Bool
+
+    var body: some View {
+        Button {
+            withAnimation(.snappy(duration: 0.25)) { isExpanded.toggle() }
+        } label: {
+            // 收起：叠放（右侧最上层，向左逐层垫底）；展开：收成一枚「收起」指示
+            HStack(spacing: isExpanded ? 4 : -14) {
+                if isExpanded {
+                    Image(systemName: "chevron.up.2")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(Theme.textTertiary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Capsule().fill(Color.white.opacity(0.07)))
+                } else {
+                    let visible = Array(chips.prefix(3).enumerated().reversed())
+                    ForEach(visible, id: \.element.id) { pair in
+                        MetaChipInline(icon: pair.element.icon, text: pair.element.text, emphasized: pair.element.emphasized)
+                    }
+                }
+            }
+            .animation(.snappy(duration: 0.25), value: isExpanded)
+        }
+        .buttonStyle(.plain)
+        .disabled(chips.isEmpty)
+        .opacity(chips.isEmpty ? 0 : 1)
+        .accessibilityLabel(chips.isEmpty ? "" : (isExpanded ? "收起元数据" : "展开元数据"))
+    }
+}
+
+/// 叠放态用的单枚胶囊（紧凑版）
+private struct MetaChipInline: View {
+    let icon: String
+    let text: String
+    let emphasized: Bool
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.system(size: 8.5, weight: .medium))
+            Text(text)
+                .font(.system(size: 10))
+                .lineLimit(1)
+        }
+        .foregroundStyle(emphasized ? Theme.text : Theme.textTertiary)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Capsule().fill(Color.white.opacity(emphasized ? 0.12 : 0.07)))
+        .overlay(Capsule().strokeBorder(emphasized ? Theme.stroke : Color.clear, lineWidth: 1))
+        .fixedSize()
+    }
+}
+
+// MARK: - 流式布局
+
+/// 简单流式布局：胶囊逐个排，放不下换行（iOS 17 Layout 协议）
+struct ChipFlowLayout: Layout {
+    var spacing: CGFloat = 6
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let maxWidth = proposal.width ?? .infinity
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+        var rowHeight: CGFloat = 0
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x > 0, x + size.width > maxWidth {
+                x = 0
+                y += rowHeight + spacing
+                rowHeight = 0
+            }
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
+        return CGSize(width: maxWidth == .infinity ? x : maxWidth, height: y + rowHeight)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var x = bounds.minX
+        var y = bounds.minY
+        var rowHeight: CGFloat = 0
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x + size.width > bounds.maxX, x > bounds.minX {
+                x = bounds.minX
+                y += rowHeight + spacing
+                rowHeight = 0
+            }
+            subview.place(at: CGPoint(x: x, y: y), anchor: .topLeading, proposal: .unspecified)
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
         }
     }
 }

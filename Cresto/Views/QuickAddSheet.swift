@@ -9,11 +9,12 @@ struct QuickAddSheet: View {
 
     @State private var text = ""
     @State private var choice: DueChoice = .today
+    @State private var urgency: TaskUrgency = .low
     @State private var expanded = false
     @FocusState private var focused: Bool
 
     enum DueChoice: String, CaseIterable, Identifiable {
-        case today, tomorrow, tonight, none
+        case today, tomorrow, none
 
         var id: String { rawValue }
 
@@ -21,7 +22,6 @@ struct QuickAddSheet: View {
             switch self {
             case .today: return "今天"
             case .tomorrow: return "明天"
-            case .tonight: return "今晚 20:00"
             case .none: return "不设日期"
             }
         }
@@ -33,28 +33,21 @@ struct QuickAddSheet: View {
                 return calendar.startOfDay(for: Date())
             case .tomorrow:
                 return calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: Date()))
-            case .tonight:
-                return calendar.date(
-                    bySettingHour: 20, minute: 0, second: 0,
-                    of: calendar.startOfDay(for: Date())
-                )
             case .none:
                 return nil
             }
         }
-
-        var hasTime: Bool { self == .tonight }
     }
 
     var body: some View {
         Group {
             if expanded {
-                TaskEditor(defaultDate: choice.date, defaultTitle: text)
+                TaskEditor(defaultDate: choice.date, defaultTitle: text, defaultUrgency: urgency)
             } else {
                 quickContent
             }
         }
-        .presentationDetents(expanded ? [.large] : [.height(330)])
+        .presentationDetents(expanded ? [.large] : [.height(398)])
         .presentationDragIndicator(.hidden)
         .presentationBackground(Theme.surfaceRaised)
         .onAppear { focused = true }
@@ -112,6 +105,9 @@ struct QuickAddSheet: View {
             }
             .padding(.top, 12)
 
+            UrgencySlider(selection: $urgency, compact: true)
+                .padding(.top, 6)
+
             HStack(spacing: 6) {
                 Button {
                     withAnimation(.snappy(duration: 0.2)) { expanded = true }
@@ -154,7 +150,7 @@ struct QuickAddSheet: View {
         let task = TaskItem(
             title: trimmed.isEmpty ? "一件新的事" : trimmed,
             dueDate: choice.date,
-            hasTime: choice.hasTime
+            urgency: urgency
         )
         context.insert(task)
         NotificationScheduler.sync(task)

@@ -31,6 +31,8 @@ struct BackupFile: Codable {
         var reminderRaw: Int
         var repeatRaw: String
         var tagsRaw: String
+        /// v5 新增：optional 兼容旧备份 JSON（缺键时解码为 nil，恢复时补默认 0）
+        var urgencyRaw: Int?
         var seriesId: UUID?
         var subtasks: [SubtaskDTO]
     }
@@ -156,6 +158,7 @@ enum BackupService {
                     reminderRaw: task.reminderRaw,
                     repeatRaw: task.repeatRaw,
                     tagsRaw: task.tagsRaw,
+                    urgencyRaw: task.urgencyRaw,
                     seriesId: task.seriesId,
                     subtasks: task.subtasks
                         .sorted { $0.order < $1.order }
@@ -317,6 +320,7 @@ enum BackupService {
             task.reminderRaw = dto.reminderRaw
             task.repeatRaw = dto.repeatRaw
             task.tagsRaw = dto.tagsRaw
+            task.urgencyRaw = dto.urgencyRaw ?? 0
             task.seriesId = dto.seriesId
             context.insert(task)
 

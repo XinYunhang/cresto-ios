@@ -14,15 +14,22 @@ struct TaskEditor: View {
     @State private var hasDate: Bool
     @State private var dueDate: Date
     @State private var hasTime: Bool
-    @State private var priority: TaskPriority
+    @State private var urgency: TaskUrgency
     @State private var reminder: ReminderOffset
     @State private var repeatKind: RepeatKind
-    @State private var tagsText: String
+    @State private var tags: [String]
+    @State private var isAddingTag = false
+    @State private var tagDraft = ""
     @State private var drafts: [DraftSubtask]
 
     @FocusState private var titleFocused: Bool
 
-    init(task: TaskItem? = nil, defaultDate: Date? = nil, defaultTitle: String = "") {
+    init(
+        task: TaskItem? = nil,
+        defaultDate: Date? = nil,
+        defaultTitle: String = "",
+        defaultUrgency: TaskUrgency = .low
+    ) {
         self.task = task
 
         let seedDate = task?.dueDate ?? defaultDate ?? Date()
@@ -31,10 +38,10 @@ struct TaskEditor: View {
         _hasDate = State(initialValue: task?.dueDate != nil || defaultDate != nil)
         _dueDate = State(initialValue: seedDate)
         _hasTime = State(initialValue: task?.hasTime ?? false)
-        _priority = State(initialValue: task?.priority ?? .none)
+        _urgency = State(initialValue: task?.urgency ?? defaultUrgency)
         _reminder = State(initialValue: task?.reminder ?? .none)
         _repeatKind = State(initialValue: task?.repeatKind ?? .none)
-        _tagsText = State(initialValue: task?.tags.joined(separator: ", ") ?? "")
+        _tags = State(initialValue: task?.tags ?? [])
         _drafts = State(
             initialValue: (task?.subtasks.sorted { $0.order < $1.order } ?? []).map {
                 DraftSubtask(title: $0.title, isDone: $0.isDone)
@@ -47,6 +54,7 @@ struct TaskEditor: View {
             ScrollView {
                 VStack(spacing: Theme.cardGap) {
                     titleCard
+                    urgencyCard
                     timeCard
                     attributesCard
                     subtaskCard
@@ -93,37 +101,17 @@ struct TaskEditor: View {
                 .foregroundStyle(Theme.text)
                 .focused($titleFocused)
                 .lineLimit(1...3)
-
-            HStack(spacing: 6) {
-                ForEach([TaskPriority.none, .low, .high], id: \.id) { item in
-                    let selected = priority == item
-                    Button {
-                        withAnimation(.snappy(duration: 0.2)) { priority = item }
-                    } label: {
-                        HStack(spacing: 4) {
-                            if item == .high {
-                                Image(systemName: "exclamationmark").font(.system(size: 9, weight: .bold))
-                            }
-                            Text(item.title)
-                        }
-                        .font(.system(size: 11.5))
-                        .foregroundStyle(selected ? Theme.bg : Theme.textSecondary)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(
-                            Capsule().fill(selected ? Theme.ink : Color.white.opacity(0.05))
-                        )
-                        .overlay(
-                            Capsule().strokeBorder(selected ? Color.clear : Theme.stroke, lineWidth: 1)
-                        )
-                    }
-                    .buttonStyle(.plain)
-                }
-                Spacer()
-            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .cardSurface()
+    }
+
+    // MARK: 紧急程度（紧接待办内容正下方）
+
+    private var urgencyCard: some View {
+        UrgencySlider(selection: $urgency)
+            .padding(.vertical, 4)
+            .cardSurface()
     }
 
     // MARK: 时间
@@ -241,69 +229,166 @@ struct TaskEditor: View {
 
     // MARK: 提醒 / 重复 / 标签
 
+    /// 三行统一排版：左侧标签与右侧内容同字号（13.5），固定最小行高 44 + 等距分隔线，基线对齐
     private var attributesCard: some View {
         VStack(spacing: 0) {
-            HStack {
-                Text("提醒").font(.system(size: 13.5)).foregroundStyle(Theme.text)
-                Spacer()
-                Picker("提醒", selection: $reminder) {
+            attributeRow("提醒") {
+                valueMenu(title: reminder.title, disabled: !hasDate) {
                     ForEach(ReminderOffset.allCases) { offset in
-                        Text(offset.title).tag(offset)
-                    }
-                }
-                .pickerStyle(.menu)
-                .tint(Theme.textSecondary)
-                .disabled(!hasDate)
-            }
-            .padding(.vertical, 9)
-
-            divider
-
-            HStack {
-                Text("重复").font(.system(size: 13.5)).foregroundStyle(Theme.text)
-                Spacer()
-                Picker("重复", selection: $repeatKind) {
-                    ForEach(RepeatKind.allCases) { kind in
-                        Text(kind.title).tag(kind)
-                    }
-                }
-                .pickerStyle(.menu)
-                .tint(Theme.textSecondary)
-                .disabled(!hasDate)
-            }
-            .padding(.vertical, 9)
-
-            divider
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("标签").font(.system(size: 13.5)).foregroundStyle(Theme.text)
-                TextField("用逗号分隔，比如：开发, 习惯", text: $tagsText)
-                    .font(.system(size: 13))
-                    .foregroundStyle(Theme.textSecondary)
-                    .autocorrectionDisabled()
-
-                if !parsedTags.isEmpty {
-                    HStack(spacing: 6) {
-                        ForEach(parsedTags, id: \.self) { tag in
-                            AccentChip(text: tag)
+                        menuButton(offset.title, isSelected: reminder == offset) {
+                            reminder = offset
                         }
                     }
                 }
             }
-            .padding(.vertical, 9)
+
+            divider
+
+            attributeRow("重复") {
+                valueMenu(title: repeatKind.title, disabled: !hasDate) {
+                    ForEach(RepeatKind.allCases) { kind in
+                        menuButton(kind.title, isSelected: repeatKind == kind) {
+                            repeatKind = kind
+                        }
+                    }
+                }
+            }
+
+            divider
+
+            tagRow
         }
         .cardSurface()
+        .alert("添加标签", isPresented: $isAddingTag) {
+            TextField("5 个字以内", text: $tagDraft)
+            Button("添加") { commitTag() }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("短标签就好，最多 5 个字；拼音组合态以最终确认的文字为准")
+        }
+    }
+
+    private func attributeRow<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {
+        HStack {
+            Text(label)
+                .font(.system(size: 13.5))
+                .foregroundStyle(Theme.text)
+            Spacer(minLength: 8)
+            content()
+        }
+        .frame(minHeight: 44)
+        .padding(.horizontal, 2)
+    }
+
+    /// 右侧值：与左标签同字号，点开菜单选
+    private func valueMenu<Content: View>(title: String, disabled: Bool, @ViewBuilder items: () -> Content) -> some View {
+        Menu {
+            items()
+        } label: {
+            HStack(spacing: 5) {
+                Text(title)
+                    .font(.system(size: 13.5))
+                    .foregroundStyle(disabled ? Theme.textTertiary : Theme.textSecondary)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.textTertiary)
+            }
+        }
+        .disabled(disabled)
+    }
+
+    private func menuButton(_ title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            if isSelected {
+                Label(title, systemImage: "checkmark")
+            } else {
+                Text(title)
+            }
+        }
+    }
+
+    // MARK: 标签
+
+    private var tagRow: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("标签")
+                    .font(.system(size: 13.5))
+                    .foregroundStyle(Theme.text)
+                Spacer(minLength: 8)
+
+                Button {
+                    isAddingTag = true
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Theme.text)
+                        .frame(width: 26, height: 26)
+                        .background(Circle().fill(Color.white.opacity(0.06)))
+                        .overlay(Circle().strokeBorder(Theme.stroke, lineWidth: 1))
+                }
+                .buttonStyle(PressableStyle())
+                .accessibilityLabel("添加标签")
+            }
+
+            if !tags.isEmpty {
+                ChipFlowLayout(spacing: 6) {
+                    ForEach(tags, id: \.self) { tag in
+                        tagChip(tag)
+                    }
+                }
+                .transition(.opacity.combined(with: .scale(scale: 0.95, anchor: .leading)))
+            }
+        }
+        .frame(minHeight: 44, alignment: .leading)
+        .padding(.horizontal, 2)
+        .padding(.vertical, 8)
+        .animation(.snappy(duration: 0.22), value: tags)
+    }
+
+    private func tagChip(_ tag: String) -> some View {
+        HStack(spacing: 5) {
+            Text(tag)
+                .font(.system(size: 11.5))
+                .foregroundStyle(Theme.textSecondary)
+                .lineLimit(1)
+            Button {
+                withAnimation(.snappy(duration: 0.2)) {
+                    tags.removeAll { $0 == tag }
+                }
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 7.5, weight: .bold))
+                    .foregroundStyle(Theme.textTertiary)
+                    .frame(width: 13, height: 13)
+                    .background(Circle().fill(Color.white.opacity(0.10)))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("移除标签 \(tag)")
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 5)
+        .background(Capsule().fill(Color.white.opacity(0.06)))
+        .overlay(Capsule().strokeBorder(Theme.stroke, lineWidth: 1))
+    }
+
+    /// 兼容中文输入法：拼音组合态不做实时截断，只在最终确认时校验，超长按字符截断到 5
+    private func commitTag() {
+        var text = tagDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        tagDraft = ""
+        guard !text.isEmpty else { return }
+        if text.count > 5 {
+            text = String(text.prefix(5))
+        }
+        if !tags.contains(text) {
+            withAnimation(.snappy(duration: 0.2)) {
+                tags.append(text)
+            }
+        }
     }
 
     private var divider: some View {
         Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1)
-    }
-
-    private var parsedTags: [String] {
-        tagsText
-            .split(whereSeparator: { $0 == "," || $0 == "，" })
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
     }
 
     // MARK: 子任务
@@ -373,7 +458,7 @@ struct TaskEditor: View {
     private var notesCard: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("备注").cardLabel()
-            TextField("补充一点细节", text: $notes, axis: .vertical)
+            TextField("", text: $notes, axis: .vertical)
                 .font(.system(size: 13.5))
                 .foregroundStyle(Theme.textSecondary)
                 .lineLimit(2...6)
@@ -418,10 +503,10 @@ struct TaskEditor: View {
         target.notes = notes
         target.dueDate = hasDate ? dueDate : nil
         target.hasTime = hasDate && hasTime
-        target.priority = priority
+        target.urgency = urgency
         target.reminder = hasDate ? reminder : .none
         target.repeatKind = hasDate ? repeatKind : .none
-        target.tags = parsedTags
+        target.tags = tags
 
         // 子任务整体重建，简单可靠
         for existing in target.subtasks {

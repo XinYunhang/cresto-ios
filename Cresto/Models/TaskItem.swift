@@ -19,6 +19,32 @@ enum TaskPriority: Int, Codable, CaseIterable, Identifiable {
     }
 }
 
+/// 紧急程度六档（galaxy-effort-slider 参考档位）：档位越高图标越重，最高档 Galaxy 有星尘效果。
+enum TaskUrgency: Int, Codable, CaseIterable, Identifiable {
+    case low = 0
+    case medium = 1
+    case high = 2
+    case extra = 3
+    case max = 4
+    case galaxy = 5
+
+    var id: Int { rawValue }
+
+    var title: String {
+        switch self {
+        case .low: return "低"
+        case .medium: return "中"
+        case .high: return "高"
+        case .extra: return "加急"
+        case .max: return "拉满"
+        case .galaxy: return "Galaxy"
+        }
+    }
+
+    /// 只有最高档点亮星尘与光晕
+    var isGalaxy: Bool { self == .galaxy }
+}
+
 enum RepeatKind: String, Codable, CaseIterable, Identifiable {
     case none, daily, weekly, monthly
 
@@ -90,6 +116,8 @@ final class TaskItem {
     var priorityRaw: Int = 0
     var reminderRaw: Int = -1
     var repeatRaw: String = "none"
+    /// 紧急程度（六档）。带默认值——旧库升级时 SwiftData 轻量迁移会自动补默认，不会崩也不会清数据
+    var urgencyRaw: Int = 0
     /// 逗号分隔的标签，避开 SwiftData 的 [String] 兼容问题
     var tagsRaw: String = ""
 
@@ -107,7 +135,8 @@ final class TaskItem {
         priority: TaskPriority = .none,
         reminder: ReminderOffset = .none,
         repeatKind: RepeatKind = .none,
-        tags: [String] = []
+        tags: [String] = [],
+        urgency: TaskUrgency = .low
     ) {
         self.title = title
         self.notes = notes
@@ -117,6 +146,7 @@ final class TaskItem {
         self.reminderRaw = reminder.rawValue
         self.repeatRaw = repeatKind.rawValue
         self.tagsRaw = tags.joined(separator: ",")
+        self.urgencyRaw = urgency.rawValue
         self.createdAt = Date()
     }
 
@@ -135,6 +165,11 @@ final class TaskItem {
     var repeatKind: RepeatKind {
         get { RepeatKind(rawValue: repeatRaw) ?? .none }
         set { repeatRaw = newValue.rawValue }
+    }
+
+    var urgency: TaskUrgency {
+        get { TaskUrgency(rawValue: urgencyRaw) ?? .low }
+        set { urgencyRaw = newValue.rawValue }
     }
 
     var tags: [String] {
