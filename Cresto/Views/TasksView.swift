@@ -410,14 +410,28 @@ struct TaskRowView: View {
             .accessibilityLabel(task.isCompleted ? "标记为未完成" : "标记为完成")
 
             HStack(alignment: .center, spacing: 8) {
-                Text(task.title)
-                    .font(.system(size: 14))
-                    .foregroundStyle(task.isCompleted ? Theme.textTertiary : Theme.text)
-                    .strikethrough(task.isCompleted, color: Theme.textTertiary)
-                    .lineLimit(compact ? 2 : 1)
-                    .truncationMode(compact ? .tail : .clip)
-                    .modifier(TitleFadeModifier(active: !compact))
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                Group {
+                    if compact {
+                        Text(task.title)
+                            .font(.system(size: 14))
+                            .foregroundStyle(task.isCompleted ? Theme.textTertiary : Theme.text)
+                            .strikethrough(task.isCompleted, color: Theme.textTertiary)
+                            .lineLimit(2)
+                            .truncationMode(.tail)
+                    } else {
+                        // spec：单行不换行、不用省略号——fixedSize 溢出由裁切 + 末端渐隐收口
+                        Text(task.title)
+                            .font(.system(size: 14))
+                            .foregroundStyle(task.isCompleted ? Theme.textTertiary : Theme.text)
+                            .strikethrough(task.isCompleted, color: Theme.textTertiary)
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .modifier(TitleFadeModifier(active: true))
+                            .clipped()
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
 
                 if !compact {
                     MetaStack(

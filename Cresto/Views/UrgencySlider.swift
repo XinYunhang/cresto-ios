@@ -459,7 +459,7 @@ enum Brain {
         if g > 0.004 && !reduceMotion {
             for shadow in [(4.0 + 10 * burst, Color(hex: 0x8351FF)), (9.0 + 15 * burst, Color(hex: 0x7543FC).opacity(0.44))] {
                 var glowCtx = ctx
-                glowCtx.addFilter(.blur(shadow.0 * scale))
+                glowCtx.addFilter(.blur(radius: shadow.0 * scale))
                 glowCtx.opacity = g
                 drawMirrored(into: &glowCtx, center: center, scale: scale, grow: grow) { half in
                     half.fill(outline, with: .color(shadow.1))
@@ -796,7 +796,10 @@ private final class DisplayLinkProxy: NSObject {
     }
 
     @objc func step(_ link: CADisplayLink) {
-        engine?.step(timestamp: link.timestamp)
+        // CADisplayLink 在主 runloop 触发；显式声明隔离（iOS 17+ assumeIsolated）
+        MainActor.assumeIsolated {
+            engine?.step(timestamp: link.timestamp)
+        }
     }
 }
 
