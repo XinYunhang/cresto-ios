@@ -1,108 +1,40 @@
 # PROGRESS
 
-> **注意（11-22）**：塔罗部分已过期。现状态：纯原生 SwiftUI 三牌阵（过去/现在/未来），
-> 78 张公版 RWS 图（Resources/RWSCards/），DailyTarot 扩为三张牌（cardID/card2ID/card3ID），
-> TarotView 含 TarotPackView / TarotPosition / TarotDrawnCard / TarotDetailSheet。详见 Obsidian 06-坑与修复。
+> **（11-22）** 塔罗与运势模块已整体下线。第 4 Tab 现为 DeepSeek 峰谷与余额监控页。
 
-## 1. 塔罗模块文件
+## 1. DeepSeek 模块文件
 
-- `Cresto/Views/TarotView.swift`：主视图 + `TornRemainder`(Shape) + `CardFan` + `ConfettiOverlay` + `TarotReadingSheet` + `CardArt` + `AssetImage`
-- `Cresto/Models/TarotDeck.swift`：`TarotCard` / `TarotDeck.major`(22 张) / `@Model DailyTarot` / `TarotService`
-- `Cresto/Views/OverviewView.swift`：`TarotMiniCard`（首页折叠区）
-- `Cresto/Views/SearchView.swift`：引用 `TarotDeck.major`
+- `Cresto/Views/DeepSeekMonitorView.swift`：第 4 Tab 主页（峰谷卡 + 余额卡 + 错误态 + 手动刷新）
+- `Cresto/Services/TariffClock.swift`：`TariffRules`（时段常量表）/ `TariffPeriod`（峰/谷 + 徽章配色）/ `TariffClock`（北京时间判定 + 下次切换计算）
+- `Cresto/Services/DeepSeekService.swift`：actor，官方 `GET /user/balance`（Bearer），字符串余额转 Double，错误分型（noKey / 401 / 429 / 5xx / 网络 / 结构）
+- `Cresto/Services/KeychainService.swift`：API Key 存取（`ThisDeviceOnly`，service = `com.xinyunhang.cresto.deepseek`）
+- `Cresto/Views/SettingsView.swift`：「DeepSeek」分组（SecureField + 保存 / 删除 / 测试连接 + 定价页链接）
 
-入口（`Cresto/Views/RootView.swift:112`）：
+峰谷规则（官方定价文档，2026 现行版）：工作日 9–12 / 14–18 峰顶（北京时间）；其余时段 + 周末全天谷价；峰价 = 谷价 × 2。官方改版只改 `TariffRules` 一张表。
 
-```swift
-case .tarot:
-    TarotView()
-```
-
-`TarotView` 无初始化参数，内部 `@Query` 取 `DailyTarot`，`onAppear` 调 `TarotService.ensureToday(in:)`。
-
-## 2. 图片资源名
-
-不在 Assets.xcassets，均为直接放进 bundle 根目录的松散文件，经 `AssetImage.image(_:)` 加载。
-
-| 用途 | 名称 | 实际文件 |
-| --- | --- | --- |
-| 卡包正面 | `pack` | `Cresto/Resources/Tarot/pack.png` |
-| 顶部撕条 | `torn-strip` | `Cresto/Resources/Tarot/torn-strip.png` |
-| 牌背 | `back` | `Cresto/Resources/Tarot/back.png` |
-| 牌面立绘 | `card.slug`（如 `00-fool`） | `Cresto/Resources/Cards/<slug>.webp` |
+## 2. 数据流
 
 ```swift
-AssetImage.image("pack")        // TarotView.swift:99
-AssetImage.image("torn-strip")  // TarotView.swift:106
-AssetImage.image(backName)      // CardFan，backName = "back"
-AssetImage.image(faceName)      // CardFan，faceName = card.slug
-CardArt(name: card.slug)        // TarotReadingSheet.swift 内
+// Key（永不进 UserDefaults / 日志 / 快照导出）
+KeychainService.save(_:) / load() / delete()
+
+// 余额（数值是字符串 "5.10"，Double(str) 失败一律显示「—」，严禁强解）
+DeepSeekService.shared.fetchBalance() -> BalanceInfo { currency, total?, granted?, toppedUp? }
+
+// 峰谷（纯本地时钟，零 API 调用）
+TariffClock.moment(now:) -> TariffMoment { period, isWeekend, secondsUntilSwitch, nextPeriod }
 ```
 
-## 3. 数据模型
+## 3. 下一轮（按 Obsidian 07 笔记 §3）
 
-```swift
-struct TarotCard: Identifiable, Hashable {
-    let id: Int
-    let slug: String
-    let name: String
-    let en: String
-    let roman: String
-    let uprightKeywords: [String]
-    let reversedKeywords: [String]
-    let uprightText: String
-    let reversedText: String
-
-    func keywords(reversed: Bool) -> [String]
-    func text(reversed: Bool) -> String
-    func positionText(reversed: Bool) -> String
-}
-```
-
-```swift
-@Model
-final class DailyTarot {
-    var dateKey: String = ""      // yyyy-MM-dd
-    var cardID: Int = 0
-    var isReversed: Bool = false
-    var isOpened: Bool = false
-    var drawnAt: Date = Date()
-    var card: TarotCard { TarotDeck.card(id: cardID) }
-}
-```
-
-牌义弹窗数据流：
-
-```swift
-@State private var draw: DailyTarot?              // onAppear: TarotService.ensureToday(in:)
-@State private var isDetailPresented = false
-private var card: TarotCard { draw?.card ?? TarotDeck.major[0] }
-private var isReversed: Bool { draw?.isReversed ?? false }
-
-.sheet(isPresented: $isDetailPresented) {
-    TarotReadingSheet(card: card, isReversed: isReversed)   // TarotView.swift:50
-}
-```
-
-`TarotReadingSheet` 入参：`let card: TarotCard`、`let isReversed: Bool`。
+- 轮询 + 余额差值累计消耗：`@Model DeepSeekDay(dateKey, cost)` + lastBalance/lastCheck，前台 Timer 60–300s（做成设置项），窗口 210 天
+- 热力图复用 `Theme.HeatScale`，阈值 p40/p75/p99 在数据变化时缓存，渲染只查表
+- 服务健康滑动窗口（429/5xx 占比 >30% 标红并降频轮询），与峰谷徽章分开
 
 ## 4. 全局样式
 
-文件：`Cresto/DesignSystem/Theme.swift`
+文件：`Cresto/DesignSystem/Theme.swift`（未变动）：内容实心磨砂块、卡片无描边无投影、`cardCorner 20 / screenPadding 18 / cardGap 10`。
 
-```swift
-static let bg            = dynamic(dark: 0x000000, light: 0xFFFFFF)
-static let surface       = dynamic(dark: 0x151517, light: 0xF2F2F5)
-static let surfaceRaised = dynamic(dark: 0x1D1D20, light: 0xE9E9EE)
-static let text          = dynamic(dark: 0xFAFAFA, light: 0x0A0A0A)
-static let textSecondary = dynamic(dark: 0x9C9CA4, light: 0x6D6D76)
-static let textTertiary  = dynamic(dark: 0x5F5F67, light: 0xA2A2AA)
-
-static let cardCorner: CGFloat = 20
-static let screenPadding: CGFloat = 18
-static let cardGap: CGFloat = 10
-```
-
-另定义：`Theme.courseTone(_ index: Int) -> CourseTone`（9 套课程配色，`bg`/`fg`）、`HeatScale.color(for:)`（5 级灰阶）、`.cardSurface(padding:)`、`.glassCapsule()` / `.glassCircle()`、`AccentChip`。
-
-字体：无独立字体文件，全部内联 `.font(.system(size:weight:))`；`.cardLabel()` 为 12pt + `textSecondary`。
+- 底栏：系统 `UISegmentedControl`，58pt（`GlassTabBar.swift`），Tabs = 概览 / 待办 / 课表 / API（`AppTab`）
+- 右下角悬浮锚点：52pt 正圆 FAB，trailing 20 / bottom 80（底栏正上方 16pt），课表页已用（`TimetableView.addButton`），待办添加键与主页交互球复用同一坐标
+- 徽章等状态件允许低饱和功能性配色（谷 = 青绿、峰 = 琥珀，`TariffPeriod.bg/fg`），内容区仍黑白
