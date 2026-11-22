@@ -348,3 +348,111 @@ private struct SwipeableTaskRow: View {
             }
     }
 }
+
+// MARK: - 行内容
+
+/// 行的可见内容（勾选框 + 文案 + 元信息）。首页 OverviewView 的 compact 行也用它。
+/// 卡底、左滑手势与删除块由 SwipeableTaskRow 包一层，这里保持透明可复用。
+struct TaskRowView: View {
+    @Environment(\.modelContext) private var context
+
+    let task: TaskItem
+    var compact = false
+    var onTap: (() -> Void)?
+
+    var body: some View {
+        HStack(spacing: 11) {
+            Button {
+                withAnimation(.snappy(duration: 0.22)) {
+                    TaskActions.toggle(task, in: context)
+                }
+            } label: {
+                ZStack {
+                    Circle()
+                        .strokeBorder(task.isCompleted ? Color.clear : Color.white.opacity(0.26), lineWidth: 1.5)
+                    if task.isCompleted {
+                        Circle().fill(Theme.ink)
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(Theme.bg)
+                    }
+                }
+                .frame(width: 19, height: 19)
+                .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(task.isCompleted ? "标记为未完成" : "标记为完成")
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(task.title)
+                    .font(.system(size: 14))
+                    .foregroundStyle(task.isCompleted ? Theme.textTertiary : Theme.text)
+                    .strikethrough(task.isCompleted, color: Theme.textTertiary)
+                    .lineLimit(2)
+
+                if !compact {
+                    HStack(spacing: 8) {
+                        if let due = task.dueDate {
+                            HStack(spacing: 3) {
+                                Image(systemName: "calendar").font(.system(size: 9))
+                                Text(due.taskLabel(hasTime: task.hasTime))
+                            }
+                            .font(.system(size: 11))
+                            .foregroundStyle(task.isOverdue ? Theme.text : Theme.textTertiary)
+                        }
+
+                        if !task.subtasks.isEmpty {
+                            HStack(spacing: 3) {
+                                Image(systemName: "checklist").font(.system(size: 9))
+                                Text("\(task.doneSubtaskCount)/\(task.subtasks.count)")
+                            }
+                            .font(.system(size: 11))
+                            .foregroundStyle(Theme.textTertiary)
+                        }
+
+                        ForEach(task.tags.prefix(2), id: \.self) { tag in
+                            Text(tag)
+                                .font(.system(size: 10))
+                                .foregroundStyle(Theme.textTertiary)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 1)
+                                .overlay(Capsule().strokeBorder(Color.white.opacity(0.10), lineWidth: 1))
+                        }
+                    }
+                }
+            }
+
+            Spacer(minLength: 8)
+
+            if let due = task.dueDate, !task.isCompleted {
+                Text(due.taskLabel(hasTime: task.hasTime))
+                    .font(.system(size: 11))
+                    .monospacedDigit()
+                    .foregroundStyle(task.isOverdue ? Theme.text : Theme.textTertiary)
+            }
+
+            if task.priority == .high {
+                Image(systemName: "exclamationmark")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.text)
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { onTap?() }
+        .contextMenu {
+            Button {
+                withAnimation { TaskActions.toggle(task, in: context) }
+            } label: {
+                Label(task.isCompleted ? "标记为未完成" : "标记为完成", systemImage: task.isCompleted ? "arrow.uturn.backward" : "checkmark")
+            }
+            if let onTap {
+                Button { onTap() } label: { Label("编辑", systemImage: "square.and.pencil") }
+            }
+            Button(role: .destructive) {
+                TaskActions.delete(task, in: context)
+            } label: {
+                Label("删除", systemImage: "trash")
+            }
+        }
+    }
+}

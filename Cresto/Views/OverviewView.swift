@@ -137,6 +137,7 @@ struct OverviewView: View {
         VStack(spacing: 0) {
             ForEach(todayTasks) { task in
                 TaskRowView(task: task, compact: true, onTap: onOpenTasks)
+                    .padding(.vertical, 7)
             }
 
             Button(action: onAddTask) {
