@@ -22,10 +22,6 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
 
-      # 卡面不进仓库（版权原因），构建时现拉
-      - name: Fetch card art
-        run: bash scripts/fetch_cards.sh
-
       - name: Write local profile
         env:
           BIRTHDAY_SECRET: ${{ secrets.BIRTHDAY }}

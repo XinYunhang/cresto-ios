@@ -20,9 +20,6 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
 
-      - name: Fetch card art
-        run: bash scripts/fetch_cards.sh
-
       - name: Write local profile
         env:
           BIRTHDAY_SECRET: ${{ secrets.BIRTHDAY }}
