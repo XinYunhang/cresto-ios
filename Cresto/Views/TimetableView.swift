@@ -378,22 +378,25 @@ struct TimetableView: View {
 
     // MARK: 悬浮添加
 
+    /// 全 App 右下角悬浮锚点：52pt 正圆、右侧内边距 20pt、
+    /// 底栏（58pt + 6pt 底距）正上方 16pt = bottom 80。
+    /// 待办添加键与主页交互球复用同一坐标。
     private var addButton: some View {
         Button {
             editingCourse = nil
             editingSlot = nil
             isEditorPresented = true
         } label: {
-            Image(systemName: "file.badge.plus")
-                .font(.system(size: 22, weight: .regular))
+            Image(systemName: "plus")
+                .font(.system(size: 20, weight: .semibold))
                 .foregroundStyle(Theme.bg)
-                .frame(width: 56, height: 56)
+                .frame(width: 52, height: 52)
                 .background(Circle().fill(Theme.text))
-                .shadow(color: .black.opacity(0.18), radius: 16, y: 8)
+                .shadow(color: .black.opacity(0.22), radius: 14, y: 6)
         }
         .buttonStyle(PressableStyle())
         .padding(.trailing, 20)
-        .padding(.bottom, 96)
+        .padding(.bottom, 80)
         .accessibilityLabel("添加课程")
     }
 

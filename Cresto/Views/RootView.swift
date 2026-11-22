@@ -10,7 +10,6 @@ struct RootView: View {
     @State private var tab: AppTab = .overview
     @State private var isQuickAddPresented = false
     @State private var isSettingsPresented = false
-    @State private var todayDraw: DailyTarot?
     @State private var activeSince: Date?
 
     @State private var ticker = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
@@ -31,11 +30,6 @@ struct RootView: View {
             if activeSince == nil { activeSince = Date() }
             AppLog.info("App 启动 · 主题 \(appTheme)")
         }
-        .task {
-            if todayDraw == nil {
-                todayDraw = TarotService.ensureToday(in: context)
-            }
-        }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
                 activeSince = Date()
@@ -48,11 +42,10 @@ struct RootView: View {
             accrueUsage()
         }
         .onReceive(NotificationCenter.default.publisher(for: .dataRestored)) { _ in
-            todayDraw = TarotService.ensureToday(in: context)
             // 恢复后旧的提醒都失效了，按新数据重排一遍
             let tasks = (try? context.fetch(FetchDescriptor<TaskItem>())) ?? []
             NotificationScheduler.syncAll(tasks)
-            AppLog.info("数据已恢复：刷新塔罗 + 重排 (tasks.count) 条提醒")
+            AppLog.info("数据已恢复：重排 \(tasks.count) 条提醒")
         }
         .sheet(isPresented: $isQuickAddPresented) {
             QuickAddSheet()
@@ -98,8 +91,6 @@ struct RootView: View {
         switch tab {
         case .overview:
             OverviewView(
-                draw: todayDraw,
-                onOpenTarot: { tab = .tarot },
                 onOpenTasks: { tab = .tasks },
                 onAddTask: { isQuickAddPresented = true },
                 onOpenSettings: { isSettingsPresented = true }
@@ -108,8 +99,8 @@ struct RootView: View {
             TasksView(onAdd: { isQuickAddPresented = true })
         case .course:
             TimetableView()
-        case .tarot:
-            TarotView()
+        case .api:
+            DeepSeekMonitorView()
         }
     }
 }
@@ -126,7 +117,7 @@ enum PreviewData {
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
         let container = try! ModelContainer(
             for: TaskItem.self, Subtask.self, Course.self, CourseSlot.self,
-            TimetableSettings.self, DailyTarot.self, DailyUsage.self,
+            TimetableSettings.self, DailyUsage.self,
             configurations: config
         )
         SeedData.seedIfNeeded(container.mainContext)

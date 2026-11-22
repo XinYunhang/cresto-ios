@@ -13,3 +13,11 @@ Cresto/Resources/profile.plist
 Cresto/Resources/courses.json
 
 _gh_login.log
+
+# 本地工作杂物(预览截图/参考物/日志),不进仓库
+/_*.png
+/_*.html
+/_mock/
+/_ref/
+/_log/
+/*.png

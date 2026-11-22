@@ -13,28 +13,20 @@ struct OverviewView: View {
     @Query(sort: \TaskItem.createdAt) private var allTasks: [TaskItem]
     @Query(sort: \DailyUsage.dateKey) private var usages: [DailyUsage]
 
-    let draw: DailyTarot?
-    var onOpenTarot: () -> Void
     var onOpenTasks: () -> Void
     var onAddTask: () -> Void
     var onOpenSettings: () -> Void
 
     @State private var showTasks = true
-    @State private var showFortune = false
-    @State private var showTarot = false
     @State private var showTime = false
     @State private var isSearchPresented = false
     @State private var isTimePresented = false
 
     init(
-        draw: DailyTarot?,
-        onOpenTarot: @escaping () -> Void,
         onOpenTasks: @escaping () -> Void,
         onAddTask: @escaping () -> Void,
         onOpenSettings: @escaping () -> Void
     ) {
-        self.draw = draw
-        self.onOpenTarot = onOpenTarot
         self.onOpenTasks = onOpenTasks
         self.onAddTask = onAddTask
         self.onOpenSettings = onOpenSettings
@@ -46,7 +38,6 @@ struct OverviewView: View {
             usages: usages,
             tasks: allTasks
         )
-        let fortune = FortuneEngine.snapshot()
 
         return ScrollView(.vertical, showsIndicators: false) {
             VStack(spacing: Theme.cardGap) {
@@ -56,14 +47,6 @@ struct OverviewView: View {
 
                 FoldCard(title: "今日待办", summary: "\(openTasks.count) 项", isOpen: $showTasks) {
                     taskList
-                }
-
-                FoldCard(title: "今日运势", summary: "\(fortune.score) 分 · \(fortune.headline)", isOpen: $showFortune) {
-                    fortuneBody(fortune)
-                }
-
-                FoldCard(title: "今日塔罗", summary: tarotSummary, isOpen: $showTarot) {
-                    tarotBody
                 }
 
                 FoldCard(title: "使用时间", summary: "今天 " + usageText(digest), isOpen: $showTime) {
@@ -169,105 +152,6 @@ struct OverviewView: View {
             }
             .buttonStyle(.plain)
         }
-    }
-
-    // MARK: 运势
-
-    private func fortuneBody(_ fortune: FortuneSnapshot) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .center, spacing: 14) {
-                Text("\(fortune.score)")
-                    .font(.system(size: 44, weight: .light))
-                    .tracking(-1.5)
-                    .foregroundStyle(Theme.text)
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(fortune.headline)
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(Theme.text)
-                    (
-                        Text("宜 ").foregroundColor(Theme.textTertiary)
-                        + Text(fortune.goodAt).foregroundColor(Theme.textSecondary)
-                        + Text(" · 忌 ").foregroundColor(Theme.textTertiary)
-                        + Text(fortune.avoid).foregroundColor(Theme.textSecondary)
-                    )
-                    .font(.system(size: 12))
-                }
-                Spacer(minLength: 0)
-            }
-
-            HStack(spacing: 6) {
-                ForEach(fortune.keywords, id: \.self) { keyword in
-                    AccentChip(text: keyword)
-                }
-            }
-            .padding(.top, 12)
-
-            HStack(alignment: .top, spacing: 10) {
-                ForEach(fortune.metrics) { metric in
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(metric.label)
-                            .font(.system(size: 10.5))
-                            .foregroundStyle(Theme.textTertiary)
-                        GeometryReader { geo in
-                            ZStack(alignment: .leading) {
-                                Capsule().fill(Theme.text.opacity(0.09))
-                                Capsule()
-                                    .fill(Theme.text.opacity(0.9))
-                                    .frame(width: max(0, geo.size.width * metric.value))
-                            }
-                        }
-                        .frame(height: 3)
-                    }
-                }
-            }
-            .padding(.top, 14)
-        }
-    }
-
-    // MARK: 塔罗
-
-    private var tarotCard: TarotCard? { draw?.card }
-
-    private var tarotSummary: String {
-        guard let card = tarotCard else { return "还没抽" }
-        return "\(card.name) · \(card.positionText(reversed: draw?.isReversed ?? false))"
-    }
-
-    private var tarotBody: some View {
-        Button(action: onOpenTarot) {
-            HStack(spacing: 13) {
-                CardArt(name: tarotCard?.slug ?? "00-fool")
-                    .frame(width: 46, height: 69)
-                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text(tarotCard?.name ?? "抽一张")
-                            .font(.system(size: 15, weight: .medium))
-                            .foregroundStyle(Theme.text)
-                        if let card = tarotCard {
-                            Text(card.en)
-                                .font(.system(size: 11, design: .serif))
-                                .foregroundStyle(Theme.textTertiary)
-                        }
-                    }
-                    HStack(spacing: 5) {
-                        ForEach(tarotCard?.keywords(reversed: draw?.isReversed ?? false) ?? ["每日一抽"], id: \.self) { keyword in
-                            AccentChip(text: keyword, small: true)
-                        }
-                    }
-                    .padding(.top, 7)
-                }
-
-                Spacer(minLength: 0)
-
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Theme.textTertiary)
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
     }
 
     // MARK: 时间

@@ -22,10 +22,6 @@ targets:
         excludes:
           - "README.md"
           - "docs/**"
-          - "Resources/RWSCards/**"
-      # 78 张 RWS 公版图：文件夹引用整体入包（bundle 根目录 RWSCards/）
-      - path: Cresto/Resources/RWSCards
-        type: folder
     settings:
       base:
         PRODUCT_NAME: Cresto

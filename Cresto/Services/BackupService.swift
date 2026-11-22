@@ -9,11 +9,10 @@ struct BackupFile: Codable {
     var tasks: [TaskDTO] = []
     var courses: [CourseDTO] = []
     var settings: SettingsDTO?
-    var tarot: [TarotDTO] = []
     var usage: [UsageDTO] = []
 
     var totalItems: Int {
-        tasks.count + courses.count + tarot.count + usage.count
+        tasks.count + courses.count + usage.count
     }
 
     struct TaskDTO: Codable {
@@ -66,13 +65,6 @@ struct BackupFile: Codable {
         var termStart: Date
         var periodCount: Int
         var periodStartsRaw: String
-    }
-
-    struct TarotDTO: Codable {
-        var dateKey: String
-        var cardID: Int
-        var isReversed: Bool
-        var drawnAt: Date
     }
 
     struct UsageDTO: Codable {
@@ -135,7 +127,6 @@ enum BackupService {
         let tasks = (try? context.fetch(FetchDescriptor<TaskItem>())) ?? []
         let courses = (try? context.fetch(FetchDescriptor<Course>())) ?? []
         let settings = (try? context.fetch(FetchDescriptor<TimetableSettings>()))?.first
-        let tarot = (try? context.fetch(FetchDescriptor<DailyTarot>())) ?? []
         let usage = (try? context.fetch(FetchDescriptor<DailyUsage>())) ?? []
 
         return BackupFile(
@@ -190,9 +181,6 @@ enum BackupService {
                     periodCount: $0.periodCount,
                     periodStartsRaw: $0.periodStartsRaw
                 )
-            },
-            tarot: tarot.map {
-                BackupFile.TarotDTO(dateKey: $0.dateKey, cardID: $0.cardID, isReversed: $0.isReversed, drawnAt: $0.drawnAt)
             },
             usage: usage.map {
                 BackupFile.UsageDTO(dateKey: $0.dateKey, foregroundSeconds: $0.foregroundSeconds, updatedAt: $0.updatedAt)
@@ -300,7 +288,6 @@ enum BackupService {
         for item in try context.fetch(FetchDescriptor<CourseSlot>()) { context.delete(item) }
         for item in try context.fetch(FetchDescriptor<Course>()) { context.delete(item) }
         for item in try context.fetch(FetchDescriptor<TimetableSettings>()) { context.delete(item) }
-        for item in try context.fetch(FetchDescriptor<DailyTarot>()) { context.delete(item) }
         for item in try context.fetch(FetchDescriptor<DailyUsage>()) { context.delete(item) }
 
         for dto in backup.tasks {
@@ -357,12 +344,6 @@ enum BackupService {
             context.insert(settings)
         } else if (try? context.fetch(FetchDescriptor<TimetableSettings>()))?.isEmpty ?? true {
             context.insert(TimetableSettings())
-        }
-
-        for dto in backup.tarot {
-            let draw = DailyTarot(dateKey: dto.dateKey, cardID: dto.cardID, isReversed: dto.isReversed)
-            draw.drawnAt = dto.drawnAt
-            context.insert(draw)
         }
 
         for dto in backup.usage {

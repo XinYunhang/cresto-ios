@@ -13,7 +13,6 @@ struct CrestoApp: App {
                 Course.self,
                 CourseSlot.self,
                 TimetableSettings.self,
-                DailyTarot.self,
                 DailyUsage.self
             )
         } catch {

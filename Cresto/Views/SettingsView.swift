@@ -13,6 +13,10 @@ struct SettingsView: View {
     @State private var sizeText = "—"
     @State private var isBackupPresented = false
 
+    @State private var apiKeyDraft = ""
+    @State private var deepseekStatus: String?
+    @State private var isTestingKey = false
+
     private var versionText: String {
         let short = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.1.0"
         let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
@@ -24,6 +28,7 @@ struct SettingsView: View {
             ScrollView {
                 VStack(spacing: Theme.cardGap) {
                     themeCard
+                    deepseekCard
                     dataCard
                     backupCard
                     logCard
@@ -50,6 +55,9 @@ struct SettingsView: View {
         .onAppear {
             AppLog.info("打开设置页")
             sizeText = AppLog.fileSizeText
+            if apiKeyDraft.isEmpty {
+                apiKeyDraft = KeychainService.load() ?? ""
+            }
         }
     }
 
@@ -85,6 +93,104 @@ struct SettingsView: View {
                 )
         }
         .buttonStyle(.plain)
+    }
+
+    // MARK: DeepSeek
+
+    private var deepseekCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("DeepSeek").cardLabel()
+
+            SecureField("sk-...", text: $apiKeyDraft)
+                .font(.system(size: 13.5))
+                .foregroundStyle(Theme.text)
+                .padding(.horizontal, 14)
+                .frame(height: 44)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Theme.surfaceRaised)
+                )
+
+            HStack(spacing: 8) {
+                capsuleButton("保存", filled: true, action: saveKey)
+                capsuleButton("删除", filled: false, action: deleteKey)
+                capsuleButton(isTestingKey ? "测试中…" : "测试连接", filled: false, action: testKey)
+            }
+
+            if let deepseekStatus {
+                Text(deepseekStatus)
+                    .font(.system(size: 11.5))
+                    .lineSpacing(3)
+                    .foregroundStyle(Theme.textSecondary)
+            }
+
+            Link(destination: TariffRules.pricingURL) {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.up.right")
+                        .font(.system(size: 10, weight: .semibold))
+                    Text("官方定价 · 峰谷时段以此为准")
+                    Spacer()
+                }
+                .font(.system(size: 12))
+                .foregroundStyle(Theme.textSecondary)
+            }
+
+            Text("Key 只存本机钥匙串，不进备份与日志；换机后重填一次。")
+                .font(.system(size: 11))
+                .lineSpacing(3)
+                .foregroundStyle(Theme.textTertiary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .cardSurface()
+    }
+
+    private func capsuleButton(_ title: String, filled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 12.5, weight: .medium))
+                .foregroundStyle(filled ? Theme.bg : Theme.text)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(Capsule().fill(filled ? Theme.text : Theme.surfaceRaised))
+        }
+        .buttonStyle(PressableStyle())
+    }
+
+    private func saveKey() {
+        let trimmed = apiKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            deepseekStatus = "Key 不能为空"
+            return
+        }
+        do {
+            try KeychainService.save(trimmed)
+            deepseekStatus = "已保存到钥匙串（仅本设备）"
+            AppLog.info("DeepSeek Key 已保存")
+        } catch {
+            deepseekStatus = error.localizedDescription
+        }
+    }
+
+    private func deleteKey() {
+        KeychainService.delete()
+        apiKeyDraft = ""
+        deepseekStatus = "已删除"
+        AppLog.info("DeepSeek Key 已删除")
+    }
+
+    private func testKey() {
+        guard !isTestingKey else { return }
+        isTestingKey = true
+        deepseekStatus = nil
+        Task {
+            defer { isTestingKey = false }
+            do {
+                let info = try await DeepSeekService.shared.fetchBalance()
+                deepseekStatus = "✓ 连接正常 · 余额 \(info.currencySymbol)\(info.totalText)"
+            } catch {
+                deepseekStatus = "✗ \(error.localizedDescription)"
+            }
+        }
     }
 
     // MARK: 数据
@@ -140,7 +246,7 @@ struct SettingsView: View {
             }
             .padding(.bottom, 12)
 
-            Text("记录启动、切页、增删待办、抽牌、课表导入这些动作，出问题时导出给我看就行。超过 512KB 会自动清空重来。")
+            Text("记录启动、切页、增删待办、课表导入这些动作，出问题时导出给我看就行。超过 512KB 会自动清空重来。")
                 .font(.system(size: 12))
                 .lineSpacing(4)
                 .foregroundStyle(Theme.textSecondary)
@@ -203,7 +309,7 @@ struct SettingsView: View {
                     .monospacedDigit()
                     .foregroundStyle(Theme.textTertiary)
             }
-            Text("Cresto iOS · 个人自用版本。塔罗卡面来自非商业授权素材，仅供自己安装使用，不对外分发。")
+            Text("Cresto iOS · 个人自用版本，不对外分发。")
                 .font(.system(size: 11.5))
                 .lineSpacing(4)
                 .foregroundStyle(Theme.textTertiary)

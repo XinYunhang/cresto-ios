@@ -29,15 +29,6 @@ struct SearchView: View {
         }
     }
 
-    private var matchedCards: [TarotCard] {
-        guard !keyword.isEmpty else { return [] }
-        return TarotDeck.major.filter {
-            $0.name.contains(keyword)
-                || $0.en.localizedCaseInsensitiveContains(keyword)
-                || $0.uprightKeywords.joined().contains(keyword)
-        }
-    }
-
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
@@ -45,7 +36,7 @@ struct SearchView: View {
                     Image(systemName: "magnifyingglass")
                         .font(.system(size: 15))
                         .foregroundStyle(Theme.textTertiary)
-                    TextField("待办、课程、塔罗牌", text: $text)
+                    TextField("待办或课程", text: $text)
                         .focused($focused)
                         .font(.system(size: 15))
                         .foregroundStyle(Theme.text)
@@ -73,12 +64,12 @@ struct SearchView: View {
                 ScrollView {
                     VStack(spacing: Theme.cardGap) {
                         if keyword.isEmpty {
-                            Text("输入关键词：待办标题、课程名或牌子")
+                            Text("输入关键词：待办标题或课程名")
                                 .font(.system(size: 12.5))
                                 .foregroundStyle(Theme.textTertiary)
                                 .frame(maxWidth: .infinity)
                                 .padding(.top, 40)
-                        } else if matchedTasks.isEmpty && matchedCourses.isEmpty && matchedCards.isEmpty {
+                        } else if matchedTasks.isEmpty && matchedCourses.isEmpty {
                             Text("没有找到「\(keyword)」")
                                 .font(.system(size: 12.5))
                                 .foregroundStyle(Theme.textTertiary)
@@ -105,14 +96,6 @@ struct SearchView: View {
                                 ForEach(matchedCourses) { course in
                                     row(title: course.name,
                                         subtitle: [course.teacher, course.location].filter { !$0.isEmpty }.joined(separator: " · "))
-                                }
-                            }
-                        }
-
-                        if !matchedCards.isEmpty {
-                            resultCard("塔罗", count: matchedCards.count) {
-                                ForEach(matchedCards) { card in
-                                    row(title: "\(card.name) \(card.en)", subtitle: card.uprightKeywords.joined(separator: " · "))
                                 }
                             }
                         }
