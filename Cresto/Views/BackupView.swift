@@ -76,7 +76,7 @@ struct BackupView: View {
                 .padding(.horizontal, 14)
                 .frame(height: 46)
                 .background(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    RoundedRectangle(cornerRadius: AppRadius.item, style: .continuous)
                         .fill(Theme.surfaceRaised)
                 )
             }
@@ -98,7 +98,7 @@ struct BackupView: View {
                     .padding(.horizontal, 14)
                     .frame(height: 46)
                     .background(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        RoundedRectangle(cornerRadius: AppRadius.item, style: .continuous)
                             .fill(Theme.surfaceRaised)
                     )
                 }

@@ -23,7 +23,6 @@ enum Theme {
     static let stroke = line
     static let strokeStrong = dynamicLine(dark: 0.10, light: 0.09)
 
-    static let cardCorner: CGFloat = 20
     static let screenPadding: CGFloat = 18
     static let cardGap: CGFloat = 10
 
@@ -46,6 +45,17 @@ enum Theme {
             UIColor(white: trait.userInterfaceStyle == .dark ? 1 : 0, alpha: trait.userInterfaceStyle == .dark ? dark : light)
         })
     }
+}
+
+/// 全 App 圆角 Token，统一以 `RoundedRectangle(cornerRadius:, style: .continuous)` 消费（Squircle 手感）。
+/// card 大卡/Bento/弹窗容器 · item 列表行卡/输入框/次级模块 · control 小按钮/分段 ·
+/// grid 课表等密集格 · tile 热力格等微块 · pill 用 Capsule，不设新档。
+enum AppRadius {
+    static let card: CGFloat = 20
+    static let item: CGFloat = 14
+    static let control: CGFloat = 10
+    static let grid: CGFloat = 8
+    static let tile: CGFloat = 2
 }
 
 extension UIColor {
@@ -77,7 +87,7 @@ private struct CardSurface: ViewModifier {
     var padding: CGFloat
 
     func body(content: Content) -> some View {
-        let shape = RoundedRectangle(cornerRadius: Theme.cardCorner, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous)
         content
             .padding(padding)
             .background(shape.fill(Theme.surface))

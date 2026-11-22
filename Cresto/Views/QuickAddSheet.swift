@@ -84,11 +84,11 @@ struct QuickAddSheet: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 12)
                 .background(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    RoundedRectangle(cornerRadius: AppRadius.item, style: .continuous)
                         .fill(Color.white.opacity(0.05))
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    RoundedRectangle(cornerRadius: AppRadius.item, style: .continuous)
                         .strokeBorder(focused ? Color.white.opacity(0.35) : Theme.stroke, lineWidth: 1)
                 )
 
@@ -136,7 +136,7 @@ struct QuickAddSheet: View {
                     .frame(maxWidth: .infinity)
                     .frame(height: 46)
                     .background(
-                        RoundedRectangle(cornerRadius: 15, style: .continuous)
+                        RoundedRectangle(cornerRadius: AppRadius.item, style: .continuous)
                             .fill(Theme.ink)
                     )
             }

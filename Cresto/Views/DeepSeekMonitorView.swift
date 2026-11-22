@@ -339,11 +339,11 @@ struct DeepSeekMonitorView: View {
             Text("少")
                 .font(.system(size: 10))
                 .foregroundStyle(Theme.textTertiary)
-            RoundedRectangle(cornerRadius: 2, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.tile, style: .continuous)
                 .fill(Color.secondary.opacity(0.35))
                 .frame(width: 9, height: 9)
             ForEach(1..<5, id: \.self) { level in
-                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                RoundedRectangle(cornerRadius: AppRadius.tile, style: .continuous)
                     .fill(Theme.text.opacity(CostHeatmapView.alphas[level]))
                     .frame(width: 9, height: 9)
             }

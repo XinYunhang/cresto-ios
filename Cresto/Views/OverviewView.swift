@@ -113,7 +113,7 @@ struct OverviewView: View {
             .padding(.horizontal, 14)
             .frame(height: 44)
             .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: AppRadius.item, style: .continuous)
                     .fill(Theme.surface)
             )
             .contentShape(Rectangle())
@@ -243,7 +243,7 @@ struct FoldCard<Content: View>: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: Theme.cardCorner, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous)
                 .fill(Theme.surface)
         )
     }
@@ -309,7 +309,7 @@ struct MiniHeatmap: View {
                 VStack(spacing: gap) {
                     ForEach(0..<7, id: \.self) { row in
                         let index = column * 7 + row
-                        RoundedRectangle(cornerRadius: 2, style: .continuous)
+                        RoundedRectangle(cornerRadius: AppRadius.tile, style: .continuous)
                             .fill(HeatScale.color(for: index < days.count ? days[index].level : 0))
                             .frame(width: size, height: size)
                     }

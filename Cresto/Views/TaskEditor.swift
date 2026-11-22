@@ -395,11 +395,11 @@ struct TaskEditor: View {
                 .frame(maxWidth: .infinity)
                 .frame(height: 46)
                 .background(
-                    RoundedRectangle(cornerRadius: 15, style: .continuous)
+                    RoundedRectangle(cornerRadius: AppRadius.item, style: .continuous)
                         .fill(Color.white.opacity(0.04))
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 15, style: .continuous)
+                    RoundedRectangle(cornerRadius: AppRadius.item, style: .continuous)
                         .strokeBorder(Theme.stroke, lineWidth: 1)
                 )
         }

@@ -116,7 +116,7 @@ struct CourseEditor: View {
         .padding(.horizontal, 15)
         .frame(height: 58)
         .background(
-            RoundedRectangle(cornerRadius: 15, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.item, style: .continuous)
                 .fill(Theme.surface)
         )
     }
@@ -186,7 +186,7 @@ struct CourseEditor: View {
             inlineField("老师", text: $teacher, placeholder: "选填")
         }
         .background(
-            RoundedRectangle(cornerRadius: 15, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.item, style: .continuous)
                 .fill(Theme.surface)
         )
     }
@@ -227,7 +227,7 @@ struct CourseEditor: View {
                         .frame(maxWidth: .infinity)
                         .frame(height: 27)
                         .background(
-                            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            RoundedRectangle(cornerRadius: AppRadius.grid, style: .continuous)
                                 .fill(active ? Theme.text.opacity(0.12) : Color.clear)
                         )
                 }
@@ -249,7 +249,7 @@ struct CourseEditor: View {
                             .frame(maxWidth: .infinity)
                             .frame(height: 32)
                             .background(
-                                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                RoundedRectangle(cornerRadius: AppRadius.grid, style: .continuous)
                                     .fill(isOn ? Theme.text : Theme.surfaceRaised)
                             )
                     }
@@ -329,7 +329,7 @@ struct CourseEditor: View {
                 .frame(maxWidth: .infinity)
                 .frame(height: 48)
                 .background(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    RoundedRectangle(cornerRadius: AppRadius.item, style: .continuous)
                         .fill(Theme.surface)
                 )
         }

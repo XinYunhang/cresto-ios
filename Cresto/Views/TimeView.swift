@@ -107,7 +107,7 @@ struct TimeView: View {
                 HStack(spacing: 3) {
                     Text("少")
                     ForEach(0..<5, id: \.self) { level in
-                        RoundedRectangle(cornerRadius: 2, style: .continuous)
+                        RoundedRectangle(cornerRadius: AppRadius.tile, style: .continuous)
                             .fill(HeatScale.color(for: level))
                             .frame(width: 7, height: 7)
                     }
@@ -124,7 +124,7 @@ struct TimeView: View {
                         VStack(spacing: 3) {
                             ForEach(0..<7, id: \.self) { row in
                                 let index = column * 7 + row
-                                RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+                                RoundedRectangle(cornerRadius: AppRadius.tile, style: .continuous)
                                     .fill(HeatScale.color(for: digest.days.indices.contains(index) ? digest.days[index].level : 0))
                                     .frame(width: 9, height: 9)
                             }
@@ -204,7 +204,7 @@ struct TimeView: View {
                 ForEach(days) { day in
                     let ratio = CGFloat(day.minutes) / CGFloat(peak)
                     VStack(spacing: 8) {
-                        RoundedRectangle(cornerRadius: 3, style: .continuous)
+                        RoundedRectangle(cornerRadius: AppRadius.tile, style: .continuous)
                             .fill(
                                 LinearGradient(
                                     colors: [Theme.ink, Theme.ink.opacity(0.22)],

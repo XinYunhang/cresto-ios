@@ -91,7 +91,7 @@ struct SettingsView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 8)
                 .background(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    RoundedRectangle(cornerRadius: AppRadius.control, style: .continuous)
                         .fill(isOn ? Theme.text : Theme.surfaceRaised)
                 )
         }
@@ -110,7 +110,7 @@ struct SettingsView: View {
                 .padding(.horizontal, 14)
                 .frame(height: 44)
                 .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    RoundedRectangle(cornerRadius: AppRadius.item, style: .continuous)
                         .fill(Theme.surfaceRaised)
                 )
 
@@ -187,7 +187,7 @@ struct SettingsView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 8)
                 .background(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    RoundedRectangle(cornerRadius: AppRadius.control, style: .continuous)
                         .fill(isOn ? Theme.text : Theme.surfaceRaised)
                 )
         }
@@ -306,11 +306,11 @@ struct SettingsView: View {
                 .padding(.horizontal, 14)
                 .frame(height: 46)
                 .background(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    RoundedRectangle(cornerRadius: AppRadius.item, style: .continuous)
                         .fill(Color.white.opacity(0.05))
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    RoundedRectangle(cornerRadius: AppRadius.item, style: .continuous)
                         .strokeBorder(Theme.stroke, lineWidth: 1)
                 )
             }

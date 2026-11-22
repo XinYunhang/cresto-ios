@@ -91,7 +91,7 @@ struct TimetableSettingsView: View {
             .padding(.horizontal, 15)
             .padding(.vertical, 14)
             .background(
-                RoundedRectangle(cornerRadius: Theme.cardCorner, style: .continuous)
+                RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous)
                     .fill(Theme.surface)
             )
         }

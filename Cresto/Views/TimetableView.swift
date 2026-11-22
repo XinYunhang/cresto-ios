@@ -50,8 +50,10 @@ struct TimetableView: View {
             .padding(.horizontal, Theme.screenPadding)
             .padding(.bottom, 128)
         }
-        .overlay(alignment: .bottomTrailing) {
-            addButton
+        .floatingAddButton("添加课程") {
+            editingCourse = nil
+            editingSlot = nil
+            isEditorPresented = true
         }
         .sheet(isPresented: $isEditorPresented, onDismiss: {
             editingCourse = nil
@@ -165,7 +167,7 @@ struct TimetableView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 9)
                     .background(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        RoundedRectangle(cornerRadius: AppRadius.item, style: .continuous)
                             .fill(isSelected ? Theme.text.opacity(0.12) : Theme.surface)
                     )
                 }
@@ -203,7 +205,7 @@ struct TimetableView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 36)
                     .background(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        RoundedRectangle(cornerRadius: AppRadius.item, style: .continuous)
                             .fill(Theme.surface)
                     )
             } else {
@@ -235,7 +237,7 @@ struct TimetableView: View {
             .padding(.horizontal, 15)
             .padding(.vertical, 13)
             .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: AppRadius.item, style: .continuous)
                     .fill(tone.bg)
             )
         }
@@ -251,7 +253,7 @@ struct TimetableView: View {
         }
         .padding(8)
         .background(
-            RoundedRectangle(cornerRadius: Theme.cardCorner, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous)
                 .fill(Theme.surface)
         )
     }
@@ -364,7 +366,7 @@ struct TimetableView: View {
                 .padding(.vertical, 4)
                 .frame(width: max(0, columnWidth - 3), height: max(0, height), alignment: .topLeading)
                 .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    RoundedRectangle(cornerRadius: AppRadius.grid, style: .continuous)
                         .fill(tone.bg)
                 )
             }
@@ -374,30 +376,6 @@ struct TimetableView: View {
                 y: CGFloat(item.slot.startPeriod - 1) * rowHeight + 2
             )
         }
-    }
-
-    // MARK: 悬浮添加
-
-    /// 全 App 右下角悬浮锚点：52pt 正圆、右侧内边距 20pt、
-    /// 底栏（58pt + 6pt 底距）正上方 16pt = bottom 80。
-    /// 待办添加键与主页交互球复用同一坐标。
-    private var addButton: some View {
-        Button {
-            editingCourse = nil
-            editingSlot = nil
-            isEditorPresented = true
-        } label: {
-            Image(systemName: "plus")
-                .font(.system(size: 20, weight: .semibold))
-                .foregroundStyle(Theme.bg)
-                .frame(width: 52, height: 52)
-                .background(Circle().fill(Theme.text))
-                .shadow(color: .black.opacity(0.22), radius: 14, y: 6)
-        }
-        .buttonStyle(PressableStyle())
-        .padding(.trailing, 20)
-        .padding(.bottom, 80)
-        .accessibilityLabel("添加课程")
     }
 
     // MARK: 数据
