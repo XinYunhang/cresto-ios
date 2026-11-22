@@ -1,13 +1,20 @@
 import SwiftUI
+import SwiftData
 import UIKit
 
-/// 第 4 Tab：DeepSeek 峰谷状态 + API 余额。
+/// 第 4 Tab：DeepSeek 峰谷状态 + API 余额 + 消耗热力。
 ///
 /// 卡片 1「峰谷时段」：官方定价规则纯本地时钟判定（`TariffClock`），
 /// TimelineView 每秒刷新倒计时与 24 小时进度条，零 API 调用。
 /// 卡片 2「API 余额」：官方 user/balance 接口，Key 在设置页配置（Keychain），
-/// 进入页面自动查询，右上角手动刷新带加载态与轻震动。
+/// 进入页面自动查询，右上角手动刷新带加载态与轻震动；每次成功采样即差值落库。
+/// 卡片 3「消耗」：余额差值累计 + Canvas 热力图（笔记 07 §6 公式）。
 struct DeepSeekMonitorView: View {
+    @Environment(\.modelContext) private var context
+
+    @Query(sort: \DeepSeekDay.dateKey, order: .reverse) private var deepseekDays: [DeepSeekDay]
+    @Query private var deepseekStates: [DeepSeekState]
+
     @State private var balance: DeepSeekService.BalanceInfo?
     @State private var balanceError: DeepSeekService.DeepSeekError?
     @State private var isLoading = false
@@ -20,6 +27,7 @@ struct DeepSeekMonitorView: View {
                 header
                 tariffCard
                 balanceCard
+                costCard
             }
             .padding(.horizontal, Theme.screenPadding)
             .padding(.bottom, 128)
@@ -27,6 +35,10 @@ struct DeepSeekMonitorView: View {
         .background(Theme.bg)
         .task {
             await refresh()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .deepseekDataUpdated)) { _ in
+            // 后台轮询记到消耗了，余额展示跟上（记录无消耗时不广播，不会循环）
+            Task { await refresh() }
         }
         .sheet(isPresented: $isSettingsPresented) {
             SettingsView()
@@ -280,15 +292,153 @@ struct DeepSeekMonitorView: View {
         }
     }
 
+    // MARK: 卡片 3 · 消耗热力
+
+    private var costCard: some View {
+        let digest = DeepSeekDigest.build(days: deepseekDays, lastCheck: deepseekStates.first?.lastCheck)
+
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("消耗").cardLabel()
+                Spacer()
+                Text("记录 \(deepseekDays.count) 天")
+                    .font(.system(size: 11))
+                    .monospacedDigit()
+                    .foregroundStyle(Theme.textTertiary)
+            }
+
+            HStack(alignment: .firstTextBaseline, spacing: 5) {
+                Text("今日")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.textTertiary)
+                Text("¥\(costText(digest.todayCost))")
+                    .font(.system(size: 26, weight: .light))
+                    .monospacedDigit()
+                    .foregroundStyle(Theme.text)
+                    .minimumScaleFactor(0.6)
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                Text("累计 ¥\(costText(digest.totalCost))")
+                    .font(.system(size: 11.5))
+                    .monospacedDigit()
+                    .foregroundStyle(Theme.textSecondary)
+            }
+
+            CostHeatmapView(costs: digest.costs, thresholds: digest.thresholds, anchor: digest.anchor)
+                .frame(height: 110)
+
+            legend
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .cardSurface()
+    }
+
+    /// 图例「少 ■■■■■ 多」，复用热力图同一组透明度（笔记 07 §6-3）
+    private var legend: some View {
+        HStack(spacing: 4) {
+            Text("少")
+                .font(.system(size: 10))
+                .foregroundStyle(Theme.textTertiary)
+            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                .fill(Color.secondary.opacity(0.35))
+                .frame(width: 9, height: 9)
+            ForEach(1..<5, id: \.self) { level in
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .fill(Theme.text.opacity(CostHeatmapView.alphas[level]))
+                    .frame(width: 9, height: 9)
+            }
+            Text("多")
+                .font(.system(size: 10))
+                .foregroundStyle(Theme.textTertiary)
+            Spacer(minLength: 0)
+            Text("阈值按近 210 天 p40/p75/p99")
+                .font(.system(size: 10))
+                .foregroundStyle(Theme.textTertiary)
+        }
+    }
+
+    private func costText(_ cost: Double) -> String {
+        String(format: "%.2f", cost)
+    }
+
+    /// 消耗热力图：桌面组件原版几何公式移植（笔记 07 §6）。
+    /// 列优先 7 行 × N 列，最近一天固定右下角并描边；accent × 五档透明度，空格 secondary@0.35。
+    private struct CostHeatmapView: View {
+        let costs: [String: Double]
+        let thresholds: [Double]
+        let anchor: Date
+
+        static let alphas: [CGFloat] = [0.35, 0.55, 0.75, 0.90, 1.0]
+
+        var body: some View {
+            Canvas { ctx, size in
+                let pad = min(size.width, size.height) * 0.05
+                let gap = pad * 0.5
+                let inner = size.width - pad * 2
+                let gridH = size.height - pad * 2
+                guard gridH > 0, inner > 0 else { return }
+                let cell = (gridH - 6 * gap) / 7
+                guard cell > 0 else { return }
+                var cols = Int((inner + gap) / (cell + gap))
+                cols = min(max(cols, 1), 30)
+                let step = cell + gap
+                let x0 = pad + (inner - CGFloat(cols) * step + gap) / 2
+                let accent = Theme.text
+                let ghost = Color.secondary.opacity(0.35)
+                let formatter = DateFormatter() // 循环外建一次
+                formatter.dateFormat = "yyyy-MM-dd"
+                formatter.locale = Locale(identifier: "en_US_POSIX")
+                let calendar = Calendar.current
+
+                for c in 0..<cols {
+                    for r in 0..<7 {
+                        let back = (cols - 1 - c) * 7 + (6 - r)
+                        guard let date = calendar.date(byAdding: .day, value: -back, to: anchor) else { continue }
+                        let key = formatter.string(from: date)
+                        let cost = costs[key] ?? 0
+                        let level = Self.level(cost, thresholds)
+                        let rect = CGRect(
+                            x: x0 + CGFloat(c) * step,
+                            y: CGFloat(r) * step,
+                            width: cell,
+                            height: cell
+                        )
+                        let path = Path(roundedRect: rect, cornerRadius: cell * 0.28)
+                        if level == 0 {
+                            ctx.fill(path, with: .color(ghost))
+                        } else {
+                            ctx.fill(path, with: .color(accent.opacity(Self.alphas[level])))
+                        }
+                        if back == 0 {
+                            ctx.stroke(path, with: .color(Theme.text), lineWidth: max(1, cell * 0.07))
+                        }
+                    }
+                }
+            }
+            .accessibilityHidden(true)
+        }
+
+        static func level(_ cost: Double, _ thresholds: [Double]) -> Int {
+            if cost <= 0 { return 0 }
+            if cost <= thresholds[0] { return 1 }
+            if cost <= thresholds[1] { return 2 }
+            if cost <= thresholds[2] { return 3 }
+            return 4
+        }
+    }
+
     // MARK: 数据
 
     private func refresh() async {
         isLoading = true
         defer { isLoading = false }
         do {
-            balance = try await DeepSeekService.shared.fetchBalance()
+            let info = try await DeepSeekService.shared.fetchBalance()
+            balance = info
             balanceError = nil
             lastCheck = Date()
+            // 每次成功采样都落库：差值累计今天消耗（余额没降时只更新锚点）
+            DeepSeekStore.record(info, in: context)
         } catch let error as DeepSeekService.DeepSeekError {
             balanceError = error
         } catch {

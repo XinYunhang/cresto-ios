@@ -10,9 +10,10 @@ struct BackupFile: Codable {
     var courses: [CourseDTO] = []
     var settings: SettingsDTO?
     var usage: [UsageDTO] = []
+    var deepseek: [DeepSeekDTO] = []
 
     var totalItems: Int {
-        tasks.count + courses.count + usage.count
+        tasks.count + courses.count + usage.count + deepseek.count
     }
 
     struct TaskDTO: Codable {
@@ -72,6 +73,12 @@ struct BackupFile: Codable {
         var foregroundSeconds: Int
         var updatedAt: Date
     }
+
+    /// 只有消耗天数；Key 与 lastBalance/lastCheck 不进快照（笔记 07 §7-5）
+    struct DeepSeekDTO: Codable {
+        var dateKey: String
+        var cost: Double
+    }
 }
 
 // MARK: - 快照
@@ -128,6 +135,7 @@ enum BackupService {
         let courses = (try? context.fetch(FetchDescriptor<Course>())) ?? []
         let settings = (try? context.fetch(FetchDescriptor<TimetableSettings>()))?.first
         let usage = (try? context.fetch(FetchDescriptor<DailyUsage>())) ?? []
+        let deepseek = (try? context.fetch(FetchDescriptor<DeepSeekDay>())) ?? []
 
         return BackupFile(
             version: 1,
@@ -184,6 +192,9 @@ enum BackupService {
             },
             usage: usage.map {
                 BackupFile.UsageDTO(dateKey: $0.dateKey, foregroundSeconds: $0.foregroundSeconds, updatedAt: $0.updatedAt)
+            },
+            deepseek: deepseek.map {
+                BackupFile.DeepSeekDTO(dateKey: $0.dateKey, cost: $0.cost)
             }
         )
     }
@@ -289,6 +300,8 @@ enum BackupService {
         for item in try context.fetch(FetchDescriptor<Course>()) { context.delete(item) }
         for item in try context.fetch(FetchDescriptor<TimetableSettings>()) { context.delete(item) }
         for item in try context.fetch(FetchDescriptor<DailyUsage>()) { context.delete(item) }
+        for item in try context.fetch(FetchDescriptor<DeepSeekDay>()) { context.delete(item) }
+        for item in try context.fetch(FetchDescriptor<DeepSeekState>()) { context.delete(item) }
 
         for dto in backup.tasks {
             let task = TaskItem(title: dto.title, notes: dto.notes)
@@ -350,6 +363,11 @@ enum BackupService {
             let record = DailyUsage(dateKey: dto.dateKey, foregroundSeconds: dto.foregroundSeconds)
             record.updatedAt = dto.updatedAt
             context.insert(record)
+        }
+
+        // 只恢复消耗天数；state 不恢复，下次采样重新锚定 lastBalance（不会记出幻影消耗）
+        for dto in backup.deepseek {
+            context.insert(DeepSeekDay(dateKey: dto.dateKey, cost: dto.cost))
         }
 
         try context.save()

@@ -13,7 +13,9 @@ struct CrestoApp: App {
                 Course.self,
                 CourseSlot.self,
                 TimetableSettings.self,
-                DailyUsage.self
+                DailyUsage.self,
+                DeepSeekDay.self,
+                DeepSeekState.self
             )
         } catch {
             fatalError("SwiftData 容器创建失败：\(error)")

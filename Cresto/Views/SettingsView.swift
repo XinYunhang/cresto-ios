@@ -3,6 +3,7 @@ import SwiftData
 
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
 
     @Query private var tasks: [TaskItem]
     @Query private var courses: [Course]
@@ -16,6 +17,8 @@ struct SettingsView: View {
     @State private var apiKeyDraft = ""
     @State private var deepseekStatus: String?
     @State private var isTestingKey = false
+
+    @AppStorage("deepseekPollSeconds") private var deepseekPollSeconds = 300
 
     private var versionText: String {
         let short = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.1.0"
@@ -124,6 +127,22 @@ struct SettingsView: View {
                     .foregroundStyle(Theme.textSecondary)
             }
 
+            VStack(alignment: .leading, spacing: 8) {
+                Text("前台轮询间隔")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.textSecondary)
+                HStack(spacing: 6) {
+                    intervalButton("1 分", seconds: 60)
+                    intervalButton("2 分", seconds: 120)
+                    intervalButton("3 分", seconds: 180)
+                    intervalButton("5 分", seconds: 300)
+                }
+                Text("每段间隔采样一次余额，差值记进当天消耗")
+                    .font(.system(size: 11))
+                    .lineSpacing(3)
+                    .foregroundStyle(Theme.textTertiary)
+            }
+
             Link(destination: TariffRules.pricingURL) {
                 HStack(spacing: 6) {
                     Image(systemName: "arrow.up.right")
@@ -156,6 +175,25 @@ struct SettingsView: View {
         .buttonStyle(PressableStyle())
     }
 
+    private func intervalButton(_ title: String, seconds: Int) -> some View {
+        let isOn = deepseekPollSeconds == seconds
+        return Button {
+            deepseekPollSeconds = seconds
+            AppLog.info("DeepSeek 轮询间隔：\(seconds)s")
+        } label: {
+            Text(title)
+                .font(.system(size: 12.5))
+                .foregroundStyle(isOn ? Theme.bg : Theme.textSecondary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(isOn ? Theme.text : Theme.surfaceRaised)
+                )
+        }
+        .buttonStyle(.plain)
+    }
+
     private func saveKey() {
         let trimmed = apiKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
@@ -186,6 +224,8 @@ struct SettingsView: View {
             defer { isTestingKey = false }
             do {
                 let info = try await DeepSeekService.shared.fetchBalance()
+                // 测试连接也是一次真实采样，差值一并落库
+                DeepSeekStore.record(info, in: modelContext)
                 deepseekStatus = "✓ 连接正常 · 余额 \(info.currencySymbol)\(info.totalText)"
             } catch {
                 deepseekStatus = "✗ \(error.localizedDescription)"

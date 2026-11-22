@@ -11,6 +11,9 @@ struct RootView: View {
     @State private var isQuickAddPresented = false
     @State private var isSettingsPresented = false
     @State private var activeSince: Date?
+    @State private var lastDeepSeekPoll: Date?
+
+    @AppStorage("deepseekPollSeconds") private var deepseekPollSeconds = 300
 
     @State private var ticker = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
 
@@ -40,6 +43,7 @@ struct RootView: View {
         .onReceive(ticker) { _ in
             guard scenePhase == .active else { return }
             accrueUsage()
+            pollDeepSeekIfNeeded()
         }
         .onReceive(NotificationCenter.default.publisher(for: .dataRestored)) { _ in
             // 恢复后旧的提醒都失效了，按新数据重排一遍
@@ -86,6 +90,26 @@ struct RootView: View {
         activeSince = nil
     }
 
+    // MARK: DeepSeek 轮询
+
+    /// 前台按设置项间隔采样余额（60–300s，默认 5 分钟），差值落库（笔记 07 §3）。
+    /// 借用 60s 心跳做节流，间隔改了立即生效，不用重建 Timer。
+    private func pollDeepSeekIfNeeded() {
+        guard KeychainService.load()?.isEmpty == false else { return }
+        let interval = TimeInterval(max(60, min(300, deepseekPollSeconds)))
+        if let last = lastDeepSeekPoll, Date().timeIntervalSince(last) < interval { return }
+        lastDeepSeekPoll = Date()
+        Task {
+            do {
+                let info = try await DeepSeekService.shared.fetchBalance()
+                DeepSeekStore.record(info, in: context)
+                AppLog.info("DeepSeek 轮询采样成功")
+            } catch {
+                AppLog.info("DeepSeek 轮询失败：\(error.localizedDescription)")
+            }
+        }
+    }
+
     @ViewBuilder
     private var content: some View {
         switch tab {
@@ -117,7 +141,7 @@ enum PreviewData {
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
         let container = try! ModelContainer(
             for: TaskItem.self, Subtask.self, Course.self, CourseSlot.self,
-            TimetableSettings.self, DailyUsage.self,
+            TimetableSettings.self, DailyUsage.self, DeepSeekDay.self, DeepSeekState.self,
             configurations: config
         )
         SeedData.seedIfNeeded(container.mainContext)
