@@ -252,10 +252,11 @@ struct TodayProgressRing: View {
 
 // MARK: - 行卡 + 左滑删除
 
-/// 待办行卡：自带圆角卡底（AppRadius.item），左滑露出纯红删除块——
-/// 高度与圆弧角与行卡严格一致（同一 ZStack 内同 shape，无缝贴合）。
-/// 只有水平位移明显大于垂直位移时才接管手势，不卡上下滚动；
-/// 展开状态由外部 `swipedID` 统一管理，同一时间最多一条。
+/// 待办行卡：自带圆角卡底（AppRadius.item），左滑在行卡右侧露出**独立的圆角红色删除块**
+/// （trash + 删除，居中在块内）——块不垫在全尺寸底板上，只按露出进度渐显，
+/// 行卡合拢时完全不画，杜绝边缘透红与列表刷新时的红色闪现。
+/// 手势：水平位移明显大于垂直才接管（不卡滚动）；同一时间只展开一条（外部 swipedID 管）；
+/// 已展开状态下再往左滑一段 = 直接删除；点红色块 = 删除。
 private struct SwipeableTaskRow: View {
     let task: TaskItem
     @Binding var swipedID: UUID?
@@ -268,6 +269,8 @@ private struct SwipeableTaskRow: View {
 
     private let revealWidth: CGFloat = 76
     private let expandThreshold: CGFloat = 44
+    /// 已展开时，再往左滑超过这个距离就触发删除
+    private let secondSwipeDelete: CGFloat = 28
 
     private var isSwiped: Bool { swipedID == task.id }
 
@@ -276,6 +279,11 @@ private struct SwipeableTaskRow: View {
             return min(0, max(-revealWidth * 1.4, dragBase + dragTranslation))
         }
         return isSwiped ? -revealWidth : 0
+    }
+
+    /// 删除块的渐显进度：合拢时 0（完全不画），完全露出时 1
+    private var revealProgress: CGFloat {
+        min(1, max(0, -offset / revealWidth))
     }
 
     var body: some View {
@@ -291,13 +299,15 @@ private struct SwipeableTaskRow: View {
                         .font(.system(size: 10, weight: .medium))
                 }
                 .foregroundStyle(Color.white)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(width: revealWidth)
+                .frame(maxHeight: .infinity)
                 .background(
                     RoundedRectangle(cornerRadius: AppRadius.item, style: .continuous)
                         .fill(Color.red)
                 )
             }
             .buttonStyle(.plain)
+            .opacity(revealProgress)
             .allowsHitTesting(isSwiped)
 
             TaskRowView(task: task, onTap: onTap)
@@ -338,7 +348,11 @@ private struct SwipeableTaskRow: View {
                 guard dragging else { return }
                 dragging = false
                 let projected = min(0, dragBase + value.translation.width)
-                if projected < -expandThreshold {
+                if isSwiped && projected <= -(revealWidth + secondSwipeDelete) {
+                    // 已展开，第二次左滑 → 直接删除
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    withAnimation(.snappy(duration: 0.25)) { onDelete() }
+                } else if projected < -expandThreshold {
                     swipedID = task.id
                     UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 } else if isSwiped {

@@ -19,6 +19,9 @@ enum Theme {
     static let online = text
     static let mint = textSecondary
 
+    /// DeepSeek 消耗热力色：谷价同族的低饱和青绿（用户拍板），热力格与图例共用
+    static let costHeat = dynamic(dark: 0x7FD6BC, light: 0x2E6E5E)
+
     /// 只用在列表内部的分隔线，不包边
     static let stroke = line
     static let strokeStrong = dynamicLine(dark: 0.10, light: 0.09)

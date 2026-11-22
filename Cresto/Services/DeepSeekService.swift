@@ -73,6 +73,9 @@ actor DeepSeekService {
         // 转换失败一律当「无数据」渲染「—」，严禁强解
         guard let payload = try? JSONDecoder().decode(Payload.self, from: data),
               let first = payload.balanceInfos.first else {
+            // 返回结构与预期不符时把开头一段写进日志，方便定位（响应体不含 Key，无泄露）
+            let snippet = String(data: data.prefix(200), encoding: .utf8) ?? "<非文本响应>"
+            AppLog.info("DeepSeek 余额返回结构异常：\(snippet)")
             throw DeepSeekError.malformed
         }
 
@@ -90,6 +93,11 @@ actor DeepSeekService {
 private extension DeepSeekService {
     struct Payload: Decodable {
         let balanceInfos: [Info]
+
+        // JSONDecoder 默认策略不做 snake_case 转换，顶层键必须显式映射
+        enum CodingKeys: String, CodingKey {
+            case balanceInfos = "balance_infos"
+        }
 
         struct Info: Decodable {
             let currency: String

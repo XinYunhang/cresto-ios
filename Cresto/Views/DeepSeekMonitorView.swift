@@ -344,7 +344,7 @@ struct DeepSeekMonitorView: View {
                 .frame(width: 9, height: 9)
             ForEach(1..<5, id: \.self) { level in
                 RoundedRectangle(cornerRadius: AppRadius.tile, style: .continuous)
-                    .fill(Theme.text.opacity(CostHeatmapView.alphas[level]))
+                    .fill(Theme.costHeat.opacity(CostHeatmapView.alphas[level]))
                     .frame(width: 9, height: 9)
             }
             Text("多")
@@ -383,7 +383,7 @@ struct DeepSeekMonitorView: View {
                 cols = min(max(cols, 1), 30)
                 let step = cell + gap
                 let x0 = pad + (inner - CGFloat(cols) * step + gap) / 2
-                let accent = Theme.text
+                let accent = Theme.costHeat
                 let ghost = Color.secondary.opacity(0.35)
                 let formatter = DateFormatter() // 循环外建一次
                 formatter.dateFormat = "yyyy-MM-dd"
