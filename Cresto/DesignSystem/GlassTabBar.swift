@@ -30,7 +30,7 @@ private struct SegmentedTabBar: UIViewRepresentable {
     }
 
     func makeUIView(context: Context) -> UISegmentedControl {
-        let images = AppTab.allCases.map { tab in
+        let images = AppTab.visible.map { tab in
             UIImage(
                 systemName: tab.symbol,
                 withConfiguration: UIImage.SymbolConfiguration(pointSize: 21, weight: .regular)
@@ -38,7 +38,7 @@ private struct SegmentedTabBar: UIViewRepresentable {
         }
         let control = TallSegmentedControl(items: images)
         control.apportionsSegmentWidthsByContent = false
-        control.selectedSegmentIndex = AppTab.allCases.firstIndex(of: selection) ?? 0
+        control.selectedSegmentIndex = AppTab.visible.firstIndex(of: selection) ?? 0
         control.addTarget(context.coordinator, action: #selector(Coordinator.valueChanged(_:)), for: .valueChanged)
         control.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         control.setContentHuggingPriority(.defaultLow, for: .horizontal)
@@ -47,7 +47,7 @@ private struct SegmentedTabBar: UIViewRepresentable {
     }
 
     func updateUIView(_ control: UISegmentedControl, context: Context) {
-        let index = AppTab.allCases.firstIndex(of: selection) ?? 0
+        let index = AppTab.visible.firstIndex(of: selection) ?? 0
         if control.selectedSegmentIndex != index {
             control.selectedSegmentIndex = index
         }
@@ -61,7 +61,7 @@ private struct SegmentedTabBar: UIViewRepresentable {
         }
 
         @objc func valueChanged(_ sender: UISegmentedControl) {
-            let cases = AppTab.allCases
+            let cases = AppTab.visible
             let index = sender.selectedSegmentIndex
             guard index >= 0, index < cases.count else { return }
             selection.wrappedValue = cases[index]

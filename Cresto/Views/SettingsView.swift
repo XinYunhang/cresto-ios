@@ -20,6 +20,12 @@ struct SettingsView: View {
 
     @AppStorage("deepseekPollSeconds") private var deepseekPollSeconds = 300
 
+    // 微信读书同步
+    @AppStorage("wereadEndpoint") private var wereadEndpoint = ""
+    @State private var wereadKeyDraft = ""
+    @State private var wereadStatus: String?
+    @State private var isTestingWeread = false
+
     private var versionText: String {
         let short = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.1.0"
         let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
@@ -31,7 +37,11 @@ struct SettingsView: View {
             ScrollView {
                 VStack(spacing: Theme.cardGap) {
                     themeCard
-                    deepseekCard
+                    // DeepSeek 相关配置随 Feature Flag 隐藏（底层逻辑保留）
+                    if FeatureFlags.enableDeepSeek {
+                        deepseekCard
+                    }
+                    wereadCard
                     dataCard
                     backupCard
                     logCard
@@ -60,6 +70,12 @@ struct SettingsView: View {
             sizeText = AppLog.fileSizeText
             if apiKeyDraft.isEmpty {
                 apiKeyDraft = KeychainService.load() ?? ""
+            }
+            if wereadKeyDraft.isEmpty {
+                wereadKeyDraft = KeychainService.load(
+                    service: KeychainService.wereadService,
+                    account: KeychainService.wereadAccount
+                ) ?? LocalProfile.wereadAPIKey ?? ""
             }
         }
     }
@@ -229,6 +245,97 @@ struct SettingsView: View {
                 deepseekStatus = "✓ 连接正常 · 余额 \(info.currencySymbol)\(info.totalText)"
             } catch {
                 deepseekStatus = "✗ \(error.localizedDescription)"
+            }
+        }
+    }
+
+    // MARK: 微信读书同步
+
+    private var wereadCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("微信读书同步").cardLabel()
+
+            TextField("接口地址（接口文档提供）", text: $wereadEndpoint)
+                .font(.system(size: 13.5))
+                .foregroundStyle(Theme.text)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+                .keyboardType(.URL)
+                .padding(.horizontal, 14)
+                .frame(height: 44)
+                .background(
+                    RoundedRectangle(cornerRadius: AppRadius.item, style: .continuous)
+                        .fill(Theme.surfaceRaised)
+                )
+
+            SecureField("wrk-...", text: $wereadKeyDraft)
+                .font(.system(size: 13.5))
+                .foregroundStyle(Theme.text)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+                .padding(.horizontal, 14)
+                .frame(height: 44)
+                .background(
+                    RoundedRectangle(cornerRadius: AppRadius.item, style: .continuous)
+                        .fill(Theme.surfaceRaised)
+                )
+
+            HStack(spacing: 8) {
+                capsuleButton("保存", filled: true, action: saveWeread)
+                capsuleButton(isTestingWeread ? "测试中…" : "测试连接", filled: false, action: testWeread)
+            }
+
+            if let wereadStatus {
+                Text(wereadStatus)
+                    .font(.system(size: 11.5))
+                    .lineSpacing(3)
+                    .foregroundStyle(Theme.textSecondary)
+            }
+
+            Text("Key 只存本机钥匙串，不进仓库与日志；接口地址与返回格式待正式文档校准后即可对接。")
+                .font(.system(size: 11))
+                .lineSpacing(3)
+                .foregroundStyle(Theme.textTertiary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .cardSurface()
+    }
+
+    private func saveWeread() {
+        let endpoint = wereadEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+        let key = wereadKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        wereadEndpoint = endpoint
+        if key.isEmpty {
+            wereadStatus = "Key 不能为空（可先填 Key 再保存）"
+            return
+        }
+        do {
+            try KeychainService.save(
+                key,
+                service: KeychainService.wereadService,
+                account: KeychainService.wereadAccount
+            )
+            wereadStatus = "已保存（接口地址 + 钥匙串 Key）"
+            AppLog.info("微信读书同步配置已保存")
+        } catch {
+            wereadStatus = error.localizedDescription
+        }
+    }
+
+    private func testWeread() {
+        guard !isTestingWeread else { return }
+        saveWeread()
+        isTestingWeread = true
+        wereadStatus = "正在同步…"
+        Task {
+            defer { isTestingWeread = false }
+            do {
+                let snapshot = try await WeReadService.shared.fetch()
+                WeReadStore.apply(snapshot, in: modelContext)
+                let bookText = snapshot.book.map { "在读《\($0.title)》" } ?? "无在读"
+                wereadStatus = "✓ 同步成功 · \(snapshot.days.count) 天记录 · \(bookText)"
+            } catch {
+                wereadStatus = "✗ \(error.localizedDescription)"
             }
         }
     }

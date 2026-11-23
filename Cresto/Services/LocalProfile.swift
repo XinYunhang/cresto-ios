@@ -18,6 +18,15 @@ enum LocalProfile {
         value(for: "name") ?? "你"
     }
 
+    /// 微信读书本地默认配置（profile.plist 不进仓库；设置页输入优先存钥匙串）
+    static var wereadAPIKey: String? {
+        value(for: "weread_api_key")
+    }
+
+    static var wereadEndpoint: String? {
+        value(for: "weread_endpoint")
+    }
+
     // MARK: 私有
 
     private static func value(for key: String) -> String? {

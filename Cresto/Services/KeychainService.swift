@@ -6,8 +6,14 @@ import Security
 /// 方案来自笔记 07：`ThisDeviceOnly` 让换机/iCloud 备份默认不带走钥匙串项，泄露面最小。
 /// Key 永不进 UserDefaults、不进日志、不进快照导出；换机后重填一次是特性。
 enum KeychainService {
-    static let service = "com.xinyunhang.cresto.deepseek"
-    static let account = "apiKey"
+    static let deepseekService = "com.xinyunhang.cresto.deepseek"
+    static let deepseekAccount = "apiKey"
+    static let wereadService = "com.xinyunhang.cresto.weread"
+    static let wereadAccount = "apiKey"
+
+    /// 默认参数保持旧调用（DeepSeek）不变
+    static let service = deepseekService
+    static let account = deepseekAccount
 
     struct KeychainError: LocalizedError {
         let status: OSStatus
@@ -19,7 +25,7 @@ enum KeychainService {
 
     // MARK: 增 / 改
 
-    static func save(_ key: String) throws {
+    static func save(_ key: String, service: String = KeychainService.deepseekService, account: String = KeychainService.deepseekAccount) throws {
         let data = Data(key.utf8)
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -44,7 +50,7 @@ enum KeychainService {
 
     // MARK: 查
 
-    static func load() -> String? {
+    static func load(service: String = KeychainService.deepseekService, account: String = KeychainService.deepseekAccount) -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -60,7 +66,7 @@ enum KeychainService {
 
     // MARK: 删
 
-    static func delete() {
+    static func delete(service: String = KeychainService.deepseekService, account: String = KeychainService.deepseekAccount) {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,

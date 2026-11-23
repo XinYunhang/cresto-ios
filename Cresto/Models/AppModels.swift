@@ -1,9 +1,18 @@
 import SwiftUI
 
+// MARK: - 功能开关
+
+/// 全局开关。DeepSeek 相关 UI 默认隐藏：
+/// 底层服务（DeepSeekService/TariffClock/DeepSeekUsage）、Keychain、备份通道全部完整保留，
+/// 仅隐藏入口并停止自动轮询；把开关切回 true 即无损恢复。
+enum FeatureFlags {
+    static let enableDeepSeek = false
+}
+
 // MARK: - 底栏
 
 enum AppTab: String, CaseIterable, Identifiable {
-    case overview, tasks, course, api
+    case overview, tasks, course, ledger, api
 
     var id: String { rawValue }
 
@@ -12,6 +21,7 @@ enum AppTab: String, CaseIterable, Identifiable {
         case .overview: return "概览"
         case .tasks: return "待办"
         case .course: return "课表"
+        case .ledger: return "记账"
         case .api: return "API"
         }
     }
@@ -21,7 +31,13 @@ enum AppTab: String, CaseIterable, Identifiable {
         case .overview: return "square.grid.2x2"
         case .tasks: return "checkmark.circle"
         case .course: return "tablecells"
+        case .ledger: return "creditcard"
         case .api: return "cpu"
         }
+    }
+
+    /// 底栏实际展示的 Tab：DeepSeek 关闭时隐藏 API 页，保持 4 图标布局
+    static var visible: [AppTab] {
+        allCases.filter { $0 != .api || FeatureFlags.enableDeepSeek }
     }
 }

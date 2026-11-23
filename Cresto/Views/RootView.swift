@@ -95,6 +95,8 @@ struct RootView: View {
     /// 前台按设置项间隔采样余额（60–300s，默认 5 分钟），差值落库（笔记 07 §3）。
     /// 借用 60s 心跳做节流，间隔改了立即生效，不用重建 Timer。
     private func pollDeepSeekIfNeeded() {
+        // 开关关闭时停止自动轮询（服务与数据完整保留，切回 true 即恢复）
+        guard FeatureFlags.enableDeepSeek else { return }
         guard KeychainService.load()?.isEmpty == false else { return }
         let interval = TimeInterval(max(60, min(300, deepseekPollSeconds)))
         if let last = lastDeepSeekPoll, Date().timeIntervalSince(last) < interval { return }
@@ -123,7 +125,10 @@ struct RootView: View {
             TasksView(onAdd: { isQuickAddPresented = true })
         case .course:
             TimetableView()
+        case .ledger:
+            LedgerView()
         case .api:
+            // DeepSeek 页仅在 FeatureFlags.enableDeepSeek = true 时出现在底栏；保留视图以便无损恢复
             DeepSeekMonitorView()
         }
     }
@@ -142,6 +147,7 @@ enum PreviewData {
         let container = try! ModelContainer(
             for: TaskItem.self, Subtask.self, Course.self, CourseSlot.self,
             TimetableSettings.self, DailyUsage.self, DeepSeekDay.self, DeepSeekState.self,
+            WeReadDay.self, WeReadBook.self,
             configurations: config
         )
         SeedData.seedIfNeeded(container.mainContext)

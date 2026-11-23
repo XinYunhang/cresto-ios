@@ -58,6 +58,9 @@ struct TasksView: View {
                 }
 
                 completedSection
+
+                // 阅读卡片：列表最底部（悬浮 FAB 与底部胶囊上方安全区内）
+                ReadingCardView()
             }
             .padding(.horizontal, Theme.screenPadding)
             .padding(.bottom, 132)

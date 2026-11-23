@@ -10,10 +10,14 @@ struct BackupFile: Codable {
     var courses: [CourseDTO] = []
     var settings: SettingsDTO?
     var usage: [UsageDTO] = []
-    var deepseek: [DeepSeekDTO] = []
+    /// v2 新增：optional 兼容旧备份（缺键不报错）
+    var deepseek: [DeepSeekDTO]?
+    /// v8 新增：微信读书缓存（阅读热力图 + 在读单书）
+    var wereadDays: [WeReadDayDTO]?
+    var wereadBook: WeReadBookDTO?
 
     var totalItems: Int {
-        tasks.count + courses.count + usage.count + deepseek.count
+        tasks.count + courses.count + usage.count + (deepseek?.count ?? 0) + (wereadDays?.count ?? 0) + (wereadBook == nil ? 0 : 1)
     }
 
     struct TaskDTO: Codable {
@@ -81,6 +85,19 @@ struct BackupFile: Codable {
         var dateKey: String
         var cost: Double
     }
+
+    struct WeReadDayDTO: Codable {
+        var dateKey: String
+        var minutes: Int
+    }
+
+    struct WeReadBookDTO: Codable {
+        var title: String
+        var author: String
+        var coverURL: String
+        var progress: Double
+        var updatedAt: Date
+    }
 }
 
 // MARK: - 快照
@@ -138,6 +155,8 @@ enum BackupService {
         let settings = (try? context.fetch(FetchDescriptor<TimetableSettings>()))?.first
         let usage = (try? context.fetch(FetchDescriptor<DailyUsage>())) ?? []
         let deepseek = (try? context.fetch(FetchDescriptor<DeepSeekDay>())) ?? []
+        let wereadDays = (try? context.fetch(FetchDescriptor<WeReadDay>())) ?? []
+        let wereadBook = (try? context.fetch(FetchDescriptor<WeReadBook>()))?.first
 
         return BackupFile(
             version: 1,
@@ -198,6 +217,18 @@ enum BackupService {
             },
             deepseek: deepseek.map {
                 BackupFile.DeepSeekDTO(dateKey: $0.dateKey, cost: $0.cost)
+            },
+            wereadDays: wereadDays.map {
+                BackupFile.WeReadDayDTO(dateKey: $0.dateKey, minutes: $0.minutes)
+            },
+            wereadBook: wereadBook.map {
+                BackupFile.WeReadBookDTO(
+                    title: $0.title,
+                    author: $0.author,
+                    coverURL: $0.coverURL,
+                    progress: $0.progress,
+                    updatedAt: $0.updatedAt
+                )
             }
         )
     }
@@ -305,6 +336,8 @@ enum BackupService {
         for item in try context.fetch(FetchDescriptor<DailyUsage>()) { context.delete(item) }
         for item in try context.fetch(FetchDescriptor<DeepSeekDay>()) { context.delete(item) }
         for item in try context.fetch(FetchDescriptor<DeepSeekState>()) { context.delete(item) }
+        for item in try context.fetch(FetchDescriptor<WeReadDay>()) { context.delete(item) }
+        for item in try context.fetch(FetchDescriptor<WeReadBook>()) { context.delete(item) }
 
         for dto in backup.tasks {
             let task = TaskItem(title: dto.title, notes: dto.notes)
@@ -370,8 +403,22 @@ enum BackupService {
         }
 
         // 只恢复消耗天数；state 不恢复，下次采样重新锚定 lastBalance（不会记出幻影消耗）
-        for dto in backup.deepseek {
+        for dto in backup.deepseek ?? [] {
             context.insert(DeepSeekDay(dateKey: dto.dateKey, cost: dto.cost))
+        }
+
+        // 微信读书缓存（阅读热力图 + 在读单书）
+        for dto in backup.wereadDays ?? [] {
+            context.insert(WeReadDay(dateKey: dto.dateKey, minutes: dto.minutes))
+        }
+        if let dto = backup.wereadBook {
+            let book = WeReadBook()
+            book.title = dto.title
+            book.author = dto.author
+            book.coverURL = dto.coverURL
+            book.progress = dto.progress
+            book.updatedAt = dto.updatedAt
+            context.insert(book)
         }
 
         try context.save()
