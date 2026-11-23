@@ -73,8 +73,7 @@ struct TimeView: View {
             .padding(.top, 10)
 
             HStack(spacing: 3) {
-                Image(systemName: week >= previous ? "arrow.up.right" : "arrow.down.right")
-                    .font(.system(size: 10, weight: .semibold))
+                ReiconIcon(icon: week >= previous ? .arrowUpRight : .arrowDownRight, size: 12)
                 Text(deltaText(current: week, previous: previous))
             }
             .font(.system(size: 11))

@@ -62,8 +62,7 @@ struct DeepSeekMonitorView: View {
             Button {
                 isSettingsPresented = true
             } label: {
-                Image(systemName: "gearshape")
-                    .font(.system(size: 17, weight: .medium))
+                ReiconIcon(icon: .setting, size: 20.5)
                     .foregroundStyle(Theme.text)
                     .frame(width: 38, height: 38)
                     .glassCircle()
@@ -82,8 +81,7 @@ struct DeepSeekMonitorView: View {
                 Text("峰谷时段").cardLabel()
                 Spacer()
                 Link(destination: TariffRules.pricingURL) {
-                    Image(systemName: "arrow.up.right")
-                        .font(.system(size: 11, weight: .semibold))
+                    ReiconIcon(icon: .arrowUpRight, size: 13)
                         .foregroundStyle(Theme.textTertiary)
                 }
                 .accessibilityLabel("官方定价页")
@@ -254,8 +252,7 @@ struct DeepSeekMonitorView: View {
                     ProgressView()
                         .controlSize(.small)
                 } else {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 13, weight: .medium))
+                    ReiconIcon(icon: .refresh, size: 15.5)
                 }
             }
             .foregroundStyle(Theme.text)

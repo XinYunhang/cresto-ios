@@ -75,8 +75,7 @@ struct OverviewView: View {
         HStack {
             Spacer()
             Button(action: onOpenSettings) {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: 17, weight: .medium))
+                ReiconIcon(icon: .moreHorizontal, size: 20.5)
                     .foregroundStyle(Theme.text)
                     .frame(width: 38, height: 38)
                     .glassCircle()
@@ -103,8 +102,7 @@ struct OverviewView: View {
             isSearchPresented = true
         } label: {
             HStack(spacing: 9) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 15))
+                ReiconIcon(icon: .search, size: 18)
                 Text("搜索")
                 Spacer()
             }
@@ -142,7 +140,7 @@ struct OverviewView: View {
 
             Button(action: onAddTask) {
                 HStack(spacing: 8) {
-                    Image(systemName: "plus").font(.system(size: 12, weight: .medium))
+                    ReiconIcon(icon: .add, size: 14.5)
                     Text("添加待办")
                     Spacer()
                 }
@@ -178,7 +176,7 @@ struct OverviewView: View {
                     .foregroundStyle(Theme.text)
 
                     HStack(spacing: 3) {
-                        Image(systemName: "arrow.up.right").font(.system(size: 10, weight: .semibold))
+                        ReiconIcon(icon: .arrowUpRight, size: 12)
                         Text(completionText(digest))
                     }
                     .font(.system(size: 11))
@@ -223,8 +221,7 @@ struct FoldCard<Content: View>: View {
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.textTertiary)
                         .lineLimit(1)
-                    Image(systemName: isOpen ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 12, weight: .semibold))
+                    ReiconIcon(icon: isOpen ? .chevronDown : .chevronRight, size: 14.5)
                         .foregroundStyle(Theme.textTertiary)
                         .frame(width: 14)
                 }

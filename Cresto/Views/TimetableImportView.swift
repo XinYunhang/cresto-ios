@@ -22,7 +22,7 @@ struct TimetableImportView: View {
 
                     PhotosPicker(selection: $pickerItem, matching: .images, photoLibrary: .shared()) {
                         HStack(spacing: 8) {
-                            Image(systemName: "photo.on.rectangle.angled").font(.system(size: 14))
+                            ReiconIcon(icon: .image, size: 17)
                             Text(courses.isEmpty ? "选择课表截图" : "换一张图")
                             Spacer()
                         }
@@ -127,9 +127,16 @@ struct TimetableImportView: View {
             Button {
                 course.wrappedValue.isIncluded.toggle()
             } label: {
-                Image(systemName: course.wrappedValue.isIncluded ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 17))
-                    .foregroundStyle(course.wrappedValue.isIncluded ? Theme.ink : Theme.textTertiary)
+                ZStack {
+                    Circle()
+                        .strokeBorder(course.wrappedValue.isIncluded ? Color.clear : Color.white.opacity(0.26), lineWidth: 1.5)
+                    if course.wrappedValue.isIncluded {
+                        Circle().fill(Theme.ink)
+                        ReiconIcon(icon: .check, size: 10)
+                            .foregroundStyle(Theme.bg)
+                    }
+                }
+                .frame(width: 19, height: 19)
             }
             .buttonStyle(.plain)
 
@@ -164,8 +171,7 @@ struct TimetableImportView: View {
                         let id = course.wrappedValue.id
                         courses.removeAll { $0.id == id }
                     } label: {
-                        Image(systemName: "trash")
-                            .font(.system(size: 13))
+                        ReiconIcon(icon: .trash, size: 15.5)
                             .foregroundStyle(Theme.textTertiary)
                     }
                     .buttonStyle(.plain)

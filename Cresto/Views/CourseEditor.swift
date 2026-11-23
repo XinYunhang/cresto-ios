@@ -70,8 +70,7 @@ struct CourseEditor: View {
             Button {
                 dismiss()
             } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 16, weight: .medium))
+                ReiconIcon(icon: .xmark, size: 19)
                     .foregroundStyle(Theme.text)
                     .frame(width: 44, height: 44)
                     .background(Circle().fill(Theme.surface))
@@ -85,8 +84,7 @@ struct CourseEditor: View {
             Spacer()
 
             Button(action: save) {
-                Image(systemName: "checkmark")
-                    .font(.system(size: 17, weight: .semibold))
+                ReiconIcon(icon: .check, size: 20.5)
                     .foregroundStyle(Theme.bg)
                     .frame(width: 44, height: 44)
                     .background(Circle().fill(Theme.text))
@@ -133,8 +131,7 @@ struct CourseEditor: View {
                     Text("周数").font(.system(size: 15)).foregroundStyle(Theme.text)
                     Spacer()
                     Text(weekSummary).font(.system(size: 14)).foregroundStyle(Theme.textTertiary)
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 12, weight: .semibold))
+                    ReiconIcon(icon: .chevronRight, size: 14.5)
                         .foregroundStyle(Theme.textTertiary)
                         .rotationEffect(.degrees(showWeeks ? 90 : 0))
                 }
@@ -162,8 +159,7 @@ struct CourseEditor: View {
                     Text("周\(TimetableMath.weekdayName(weekday)) \(startPeriod)-\(endPeriod) 节")
                         .font(.system(size: 14))
                         .foregroundStyle(Theme.textTertiary)
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 12, weight: .semibold))
+                    ReiconIcon(icon: .chevronRight, size: 14.5)
                         .foregroundStyle(Theme.textTertiary)
                         .rotationEffect(.degrees(showPeriods ? 90 : 0))
                 }
@@ -307,7 +303,7 @@ struct CourseEditor: View {
             addAnotherTime()
         } label: {
             HStack(spacing: 6) {
-                Image(systemName: "plus").font(.system(size: 13, weight: .medium))
+                ReiconIcon(icon: .add, size: 15.5)
                 Text("添加其他时间")
             }
             .font(.system(size: 14))

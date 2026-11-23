@@ -117,7 +117,7 @@ struct QuickAddSheet: View {
                     withAnimation(.snappy(duration: 0.2)) { expanded = true }
                 } label: {
                     HStack(spacing: 4) {
-                        Image(systemName: "slider.horizontal.3").font(.system(size: 11))
+                        ReiconIcon(icon: .sliderHorizontal, size: 13)
                         Text("时间、提醒、子任务")
                     }
                     .font(.system(size: 12))

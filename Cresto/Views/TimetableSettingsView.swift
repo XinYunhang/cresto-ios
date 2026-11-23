@@ -81,7 +81,7 @@ struct TimetableSettingsView: View {
             confirmReimport = true
         } label: {
             HStack(spacing: 8) {
-                Image(systemName: "arrow.clockwise").font(.system(size: 13))
+                ReiconIcon(icon: .refresh, size: 15.5)
                 Text("重新导入打包课表")
                 Spacer()
                 Text("替换全部课程").font(.system(size: 11.5)).foregroundStyle(Theme.textTertiary)

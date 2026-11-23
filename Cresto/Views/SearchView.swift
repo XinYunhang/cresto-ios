@@ -33,8 +33,7 @@ struct SearchView: View {
         NavigationStack {
             VStack(spacing: 0) {
                 HStack(spacing: 9) {
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 15))
+                    ReiconIcon(icon: .search, size: 18)
                         .foregroundStyle(Theme.textTertiary)
                     TextField("待办或课程", text: $text)
                         .focused($focused)
@@ -45,8 +44,7 @@ struct SearchView: View {
                         Button {
                             text = ""
                         } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .font(.system(size: 15))
+                            ReiconIcon(icon: .closeCircle, size: 18)
                                 .foregroundStyle(Theme.textTertiary)
                         }
                         .buttonStyle(.plain)

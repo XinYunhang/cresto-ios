@@ -102,7 +102,7 @@ struct TasksView: View {
                 Text("\(tasks.count)").font(.system(size: 11.5)).monospacedDigit().opacity(0.6)
                 Spacer()
                 if group == .overdue {
-                    Image(systemName: "clock.badge.exclamationmark").font(.system(size: 11))
+                    ReiconIcon(icon: .clock, size: 13)
                 }
             }
             .foregroundStyle(group == .overdue ? Theme.text : Theme.textTertiary)
@@ -132,8 +132,7 @@ struct TasksView: View {
                     Text("已完成").font(.system(size: 11.5))
                     Text("\(doneTasks.count)").font(.system(size: 11.5)).monospacedDigit().opacity(0.6)
                     Spacer()
-                    Image(systemName: showCompleted ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 10, weight: .semibold))
+                    ReiconIcon(icon: showCompleted ? .chevronUp : .chevronDown, size: 12)
                 }
                 .foregroundStyle(Theme.textTertiary)
                 .contentShape(Rectangle())
@@ -160,8 +159,7 @@ struct TasksView: View {
 
     private var emptyState: some View {
         VStack(spacing: 8) {
-            Image(systemName: "checkmark.circle")
-                .font(.system(size: 26, weight: .light))
+            ReiconIcon(icon: .checkCircle, size: 31)
                 .foregroundStyle(Theme.textTertiary)
             Text("今天没有待办")
                 .font(.system(size: 14))
@@ -302,8 +300,7 @@ private struct SwipeableTaskRow: View {
                 withAnimation(.snappy(duration: 0.25)) { onDelete() }
             } label: {
                 VStack(spacing: 4) {
-                    Image(systemName: "trash")
-                        .font(.system(size: 15, weight: .medium))
+                    ReiconIcon(icon: .trash, size: 18)
                     Text("删除")
                         .font(.system(size: 10, weight: .medium))
                 }
@@ -403,8 +400,7 @@ struct TaskRowView: View {
                         .strokeBorder(task.isCompleted ? Color.clear : Color.white.opacity(0.26), lineWidth: 1.5)
                     if task.isCompleted {
                         Circle().fill(Theme.ink)
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 10, weight: .bold))
+                        ReiconIcon(icon: .check, size: 12)
                             .foregroundStyle(Theme.bg)
                     }
                 }
@@ -454,15 +450,15 @@ struct TaskRowView: View {
             Button {
                 withAnimation { TaskActions.toggle(task, in: context) }
             } label: {
-                Label(task.isCompleted ? "标记为未完成" : "标记为完成", systemImage: task.isCompleted ? "arrow.uturn.backward" : "checkmark")
+                Label { Text(task.isCompleted ? "标记为未完成" : "标记为完成") } icon: { ReiconIcon(icon: task.isCompleted ? .undo : .check, size: 15) }
             }
             if let onTap {
-                Button { onTap() } label: { Label("编辑", systemImage: "square.and.pencil") }
+                Button { onTap() } label: { Label { Text("编辑") } icon: { ReiconIcon(icon: .edit, size: 15) } }
             }
             Button(role: .destructive) {
                 TaskActions.delete(task, in: context)
             } label: {
-                Label("删除", systemImage: "trash")
+                Label { Text("删除") } icon: { ReiconIcon(icon: .trash, size: 15) }
             }
         }
     }
@@ -473,19 +469,19 @@ struct TaskRowView: View {
     private var metaChips: [MetaChipData] {
         var chips: [MetaChipData] = []
         if let due = task.dueDate {
-            chips.append(MetaChipData(icon: "calendar", text: due.taskLabel(hasTime: task.hasTime)))
+            chips.append(MetaChipData(icon: .calendar, text: due.taskLabel(hasTime: task.hasTime)))
         }
         for tag in task.tags.prefix(1) {
-            chips.append(MetaChipData(icon: "tag", text: tag))
+            chips.append(MetaChipData(icon: .hashtag, text: tag))
         }
         if task.reminder != .none {
-            chips.append(MetaChipData(icon: "bell", text: task.reminder.title))
+            chips.append(MetaChipData(icon: .bell, text: task.reminder.title))
         }
         if task.repeatKind != .none {
-            chips.append(MetaChipData(icon: "arrow.triangle.2.circlepath", text: task.repeatKind.title))
+            chips.append(MetaChipData(icon: .repeatArrows, text: task.repeatKind.title))
         }
         if !task.subtasks.isEmpty {
-            chips.append(MetaChipData(icon: "checklist", text: "\(task.doneSubtaskCount)/\(task.subtasks.count)"))
+            chips.append(MetaChipData(icon: .checklist, text: "\(task.doneSubtaskCount)/\(task.subtasks.count)"))
         }
 
         // 紧急度固定贴最右（叠放最上层、收起时不被其他胶囊盖住），并保证进前三不被截断
@@ -494,7 +490,7 @@ struct TaskRowView: View {
                 chips = Array(chips.prefix(2))
             }
             chips.append(MetaChipData(
-                icon: task.urgency.symbol,
+                icon: task.urgency.reicon,
                 text: task.urgency.title,
                 urgency: task.urgency
             ))
@@ -509,7 +505,7 @@ struct TaskRowView: View {
 
 struct MetaChipData: Identifiable {
     let id = UUID()
-    let icon: String
+    let icon: Reicon
     let text: String
     /// 非 nil = 发光圆点紧急度标签（收起只露圆点，展开显示 ● 档位）
     var urgency: TaskUrgency? = nil
@@ -606,8 +602,7 @@ private struct MetaChipInline: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            Image(systemName: chip.icon)
-                .font(.system(size: 10, weight: .medium))
+            ReiconIcon(icon: chip.icon, size: 12)
             Text(chip.text)
                 .font(.system(size: 10.5))
                 .fixedSize(horizontal: true, vertical: false)

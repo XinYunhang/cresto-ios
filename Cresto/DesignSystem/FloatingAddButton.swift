@@ -14,8 +14,7 @@ struct FloatingActionButton: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: "plus")
-                .font(.system(size: 20, weight: .semibold))
+            ReiconIcon(icon: .add, size: 24)
                 .foregroundStyle(Theme.bg)
                 .frame(width: FloatingAnchor.size, height: FloatingAnchor.size)
                 .background(Circle().fill(Theme.text))

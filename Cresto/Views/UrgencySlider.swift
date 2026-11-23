@@ -49,8 +49,7 @@ struct UrgencySlider: View {
                 // 34pt 发光滑块（图标 15pt，四周 4pt 内距，绝不裁切）
                 ZStack {
                     Circle().fill(tint)
-                    Image(systemName: engine.nearestTier.symbol)
-                        .font(.system(size: 15, weight: .semibold))
+                    ReiconIcon(icon: engine.nearestTier.reicon, size: 16)
                         .foregroundStyle(Color.white)
                 }
                 .frame(width: Self.knobSize, height: Self.knobSize)

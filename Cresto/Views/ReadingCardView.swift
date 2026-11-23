@@ -100,8 +100,7 @@ struct ReadingCardView: View {
                 } label: {
                     HStack(spacing: 2) {
                         Text(issue == .notConfigured ? "未配置 · 去设置" : "同步失败 · 重试")
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 9, weight: .semibold))
+                        ReiconIcon(icon: .chevronRight, size: 11)
                     }
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(WeReadHeat.green)
@@ -178,8 +177,7 @@ struct ReadingCardView: View {
                             .foregroundStyle(Theme.textTertiary)
                             .lineLimit(1)
                     }
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 11, weight: .semibold))
+                    ReiconIcon(icon: .chevronDown, size: 13)
                         .foregroundStyle(Theme.textTertiary)
                         .rotationEffect(.degrees(isBookExpanded ? 180 : 0))
                 }
@@ -273,8 +271,7 @@ struct ReadingCardView: View {
     private var coverPlaceholder: some View {
         ZStack {
             Theme.surfaceRaised
-            Image(systemName: "book.closed")
-                .font(.system(size: 16, weight: .light))
+            ReiconIcon(icon: .book, size: 19)
                 .foregroundStyle(Theme.textTertiary)
         }
     }

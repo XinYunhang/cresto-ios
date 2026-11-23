@@ -182,10 +182,10 @@ struct TaskEditor: View {
                     }
                 } label: {
                     HStack(spacing: 6) {
-                        Image(systemName: "calendar").font(.system(size: 12))
+                        ReiconIcon(icon: .calendar, size: 14.5)
                         Text("添加日期和时间")
                         Spacer()
-                        Image(systemName: "plus").font(.system(size: 11, weight: .medium))
+                        ReiconIcon(icon: .add, size: 13)
                     }
                     .font(.system(size: 13))
                     .foregroundStyle(Theme.textSecondary)
@@ -301,8 +301,7 @@ struct TaskEditor: View {
                 Text(title)
                     .font(.system(size: 13.5))
                     .foregroundStyle(disabled ? Theme.textTertiary : Theme.textSecondary)
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 10, weight: .semibold))
+                ReiconIcon(icon: .chevronDown, size: 12)
                     .foregroundStyle(Theme.textTertiary)
             }
         }
@@ -312,7 +311,7 @@ struct TaskEditor: View {
     private func menuButton(_ title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             if isSelected {
-                Label(title, systemImage: "checkmark")
+                Label { Text(title) } icon: { ReiconIcon(icon: .check, size: 14) }
             } else {
                 Text(title)
             }
@@ -332,8 +331,7 @@ struct TaskEditor: View {
                 Button {
                     isAddingTag = true
                 } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 12, weight: .medium))
+                    ReiconIcon(icon: .add, size: 14.5)
                         .foregroundStyle(Theme.text)
                         .frame(width: 26, height: 26)
                         .background(Circle().fill(Color.white.opacity(0.06)))
@@ -369,8 +367,7 @@ struct TaskEditor: View {
                     tags.removeAll { $0 == tag }
                 }
             } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 7.5, weight: .bold))
+                ReiconIcon(icon: .xmark, size: 9)
                     .foregroundStyle(Theme.textTertiary)
                     .frame(width: 13, height: 13)
                     .background(Circle().fill(Color.white.opacity(0.10)))
@@ -425,9 +422,16 @@ struct TaskEditor: View {
                     Button {
                         draft.isDone.toggle()
                     } label: {
-                        Image(systemName: draft.isDone ? "checkmark.circle.fill" : "circle")
-                            .font(.system(size: 17))
-                            .foregroundStyle(draft.isDone ? Theme.ink : Theme.textTertiary)
+                        ZStack {
+                            Circle()
+                                .strokeBorder(draft.isDone ? Color.clear : Color.white.opacity(0.26), lineWidth: 1.5)
+                            if draft.isDone {
+                                Circle().fill(Theme.ink)
+                                ReiconIcon(icon: .check, size: 10)
+                                    .foregroundStyle(Theme.bg)
+                            }
+                        }
+                        .frame(width: 19, height: 19)
                     }
                     .buttonStyle(.plain)
 
@@ -439,8 +443,7 @@ struct TaskEditor: View {
                     Button {
                         drafts.removeAll { $0.id == draft.id }
                     } label: {
-                        Image(systemName: "minus.circle")
-                            .font(.system(size: 14))
+                        ReiconIcon(icon: .minusCircle, size: 17)
                             .foregroundStyle(Theme.textTertiary)
                     }
                     .buttonStyle(.plain)
@@ -452,7 +455,7 @@ struct TaskEditor: View {
                 drafts.append(DraftSubtask(title: "", isDone: false))
             } label: {
                 HStack(spacing: 8) {
-                    Image(systemName: "plus").font(.system(size: 11, weight: .medium))
+                    ReiconIcon(icon: .add, size: 13)
                     Text("添加子任务")
                     Spacer()
                 }

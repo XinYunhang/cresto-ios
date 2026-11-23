@@ -78,8 +78,7 @@ struct TimetableView: View {
                     mode = mode == .list ? .grid : .list
                 }
             } label: {
-                Image(systemName: mode == .list ? "tablecells" : "list.bullet")
-                    .font(.system(size: 17, weight: .medium))
+                ReiconIcon(icon: mode == .list ? .gridCells : .list, size: 20.5)
                     .foregroundStyle(Theme.text)
                     .frame(width: 38, height: 38)
                     .glassCircle()
@@ -95,7 +94,7 @@ struct TimetableView: View {
                         week = index
                     } label: {
                         if index == currentWeek {
-                            Label("第 \(index) 周", systemImage: "checkmark")
+                            Label { Text("第 \(index) 周") } icon: { ReiconIcon(icon: .check, size: 14) }
                         } else {
                             Text("第 \(index) 周")
                         }
@@ -105,8 +104,7 @@ struct TimetableView: View {
                 HStack(spacing: 4) {
                     Text("第 \(currentWeek) 周")
                         .font(.system(size: 17, weight: .semibold))
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 12, weight: .semibold))
+                    ReiconIcon(icon: .chevronDown, size: 14.5)
                         .foregroundStyle(Theme.textTertiary)
                 }
                 .foregroundStyle(Theme.text)
@@ -118,19 +116,18 @@ struct TimetableView: View {
                 Button {
                     isManagePresented = true
                 } label: {
-                    Label("课表管理", systemImage: "tablecells")
+                    Label { Text("课表管理") } icon: { ReiconIcon(icon: .gridCells, size: 15) }
                 }
                 Button {
                     isImportPresented = true
                 } label: {
-                    Label("导入课表", systemImage: "square.and.arrow.down")
+                    Label { Text("导入课表") } icon: { ReiconIcon(icon: .download, size: 15) }
                 }
                 ShareLink(item: shareText) {
-                    Label("分享课表", systemImage: "square.and.arrow.up")
+                    Label { Text("分享课表") } icon: { ReiconIcon(icon: .share, size: 15) }
                 }
             } label: {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: 17, weight: .medium))
+                ReiconIcon(icon: .moreHorizontal, size: 20.5)
                     .foregroundStyle(Theme.text)
                     .frame(width: 38, height: 38)
                     .glassCircle()

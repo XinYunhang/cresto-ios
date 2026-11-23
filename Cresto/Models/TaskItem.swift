@@ -38,11 +38,11 @@ enum TaskUrgency: Int, Codable, CaseIterable, Identifiable {
         }
     }
 
-    var symbol: String {
+    var reicon: Reicon {
         switch self {
-        case .mild: return "wind"
-        case .important: return "star.fill"
-        case .urgent: return "flame.fill"
+        case .mild: return .wind
+        case .important: return .star
+        case .urgent: return .flame
         }
     }
 

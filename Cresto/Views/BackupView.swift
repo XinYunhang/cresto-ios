@@ -67,7 +67,7 @@ struct BackupView: View {
                 createSnapshot()
             } label: {
                 HStack(spacing: 8) {
-                    Image(systemName: "camera.aperture").font(.system(size: 13))
+                    ReiconIcon(icon: .camera, size: 15.5)
                     Text("立即创建快照")
                     Spacer()
                 }
@@ -85,7 +85,7 @@ struct BackupView: View {
             if let latest {
                 ShareLink(item: latest) {
                     HStack(spacing: 8) {
-                        Image(systemName: "square.and.arrow.up").font(.system(size: 13))
+                        ReiconIcon(icon: .share, size: 15.5)
                         Text("导出备份文件")
                         Spacer()
                         Text(latest.lastPathComponent)

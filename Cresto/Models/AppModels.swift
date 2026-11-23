@@ -26,13 +26,13 @@ enum AppTab: String, CaseIterable, Identifiable {
         }
     }
 
-    var symbol: String {
+    var reicon: Reicon {
         switch self {
-        case .overview: return "square.grid.2x2"
-        case .tasks: return "checkmark.circle"
-        case .course: return "tablecells"
-        case .ledger: return "creditcard"
-        case .api: return "cpu"
+        case .overview: return .grid
+        case .tasks: return .checkCircle
+        case .course: return .calendarDays
+        case .ledger: return .wallet
+        case .api: return .cpu
         }
     }
 

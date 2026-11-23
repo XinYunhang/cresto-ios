@@ -161,8 +161,7 @@ struct SettingsView: View {
 
             Link(destination: TariffRules.pricingURL) {
                 HStack(spacing: 6) {
-                    Image(systemName: "arrow.up.right")
-                        .font(.system(size: 10, weight: .semibold))
+                    ReiconIcon(icon: .arrowUpRight, size: 12)
                     Text("官方定价 · 峰谷时段以此为准")
                     Spacer()
                 }
@@ -369,8 +368,7 @@ struct SettingsView: View {
                         .foregroundStyle(Theme.textTertiary)
                 }
                 Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
+                ReiconIcon(icon: .chevronRight, size: 14.5)
                     .foregroundStyle(Theme.textTertiary)
             }
             .contentShape(Rectangle())
@@ -401,7 +399,7 @@ struct SettingsView: View {
 
             ShareLink(item: AppLog.fileURL) {
                 HStack(spacing: 8) {
-                    Image(systemName: "square.and.arrow.up").font(.system(size: 13))
+                    ReiconIcon(icon: .share, size: 15.5)
                     Text("导出日志")
                     Spacer()
                     Text("cresto.log")
@@ -428,7 +426,7 @@ struct SettingsView: View {
                 sizeText = AppLog.fileSizeText
             } label: {
                 HStack(spacing: 8) {
-                    Image(systemName: "trash").font(.system(size: 13))
+                    ReiconIcon(icon: .trash, size: 15.5)
                     Text("清空日志")
                     Spacer()
                 }

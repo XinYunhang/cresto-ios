@@ -37,10 +37,7 @@ private struct SegmentedTabBar: UIViewRepresentable {
 
     func makeUIView(context: Context) -> UISegmentedControl {
         let images = AppTab.visible.map { tab in
-            UIImage(
-                systemName: tab.symbol,
-                withConfiguration: UIImage.SymbolConfiguration(pointSize: 21, weight: .regular)
-            )
+            Self.tabBarImage(tab.reicon)
         }
         let control = TallSegmentedControl(items: images)
         control.apportionsSegmentWidthsByContent = false
@@ -50,6 +47,19 @@ private struct SegmentedTabBar: UIViewRepresentable {
         control.setContentHuggingPriority(.defaultLow, for: .horizontal)
         control.accessibilityLabel = "主导航"
         return control
+    }
+
+    /// Reicon 模板矢量 → 22pt 渲染图（UISegmentedControl 用）
+    static func tabBarImage(_ icon: Reicon) -> UIImage {
+        let target = CGSize(width: 22, height: 22)
+        guard let base = UIImage(named: icon.rawValue)?.withRenderingMode(.alwaysTemplate) else {
+            return UIImage().withRenderingMode(.alwaysTemplate)
+        }
+        let renderer = UIGraphicsImageRenderer(size: target)
+        return renderer.image { _ in
+            base.draw(in: CGRect(origin: .zero, size: target))
+        }
+        .withRenderingMode(.alwaysTemplate)
     }
 
     func updateUIView(_ control: UISegmentedControl, context: Context) {
