@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import UIKit
 
 /// FAB 拉起来的快速添加。选好日期点「添加」就结束；
 /// 要提醒 / 重复 / 子任务就点「更多选项」，原地展开成完整编辑页。
@@ -9,9 +10,11 @@ struct QuickAddSheet: View {
 
     @State private var text = ""
     @State private var choice: DueChoice = .today
-    @State private var urgency: TaskUrgency = .low
+    @State private var urgency: TaskUrgency = .mild
     @State private var expanded = false
     @FocusState private var focused: Bool
+
+    private let hapticSelect = UISelectionFeedbackGenerator()
 
     enum DueChoice: String, CaseIterable, Identifiable {
         case today, tomorrow, none
@@ -47,7 +50,7 @@ struct QuickAddSheet: View {
                 quickContent
             }
         }
-        .presentationDetents(expanded ? [.large] : [.height(398)])
+        .presentationDetents(expanded ? [.large] : [.height(340)])
         .presentationDragIndicator(.hidden)
         .presentationBackground(Theme.surfaceRaised)
         .onAppear { focused = true }
@@ -101,12 +104,13 @@ struct QuickAddSheet: View {
                     }
                     .buttonStyle(.plain)
                 }
+
                 Spacer(minLength: 0)
+
+                // 紧急程度小胶囊（设计图：日期行最右侧，点按循环 轻微→重要→紧急）
+                urgencyCapsule
             }
             .padding(.top, 12)
-
-            UrgencySlider(selection: $urgency, compact: true)
-                .padding(.top, 6)
 
             HStack(spacing: 6) {
                 Button {
@@ -143,6 +147,34 @@ struct QuickAddSheet: View {
         .padding(.top, 10)
         .padding(.bottom, 26)
         .background(Theme.surfaceRaised.ignoresSafeArea())
+    }
+
+    // MARK: 紧急程度胶囊
+
+    private var urgencyCapsule: some View {
+        Button {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                urgency = urgency.next
+            }
+            hapticSelect.selectionChanged()
+        } label: {
+            HStack(spacing: 5) {
+                Circle()
+                    .fill(urgency.tint)
+                    .frame(width: 7, height: 7)
+                    .shadow(color: urgency.tint.opacity(0.85), radius: 3.5)
+                Text(urgency.title)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(urgency.tint)
+            }
+            .padding(.horizontal, 11)
+            .padding(.vertical, 6)
+            .background(Capsule().fill(urgency.tint.opacity(0.12)))
+            .overlay(Capsule().strokeBorder(urgency.tint.opacity(0.35), lineWidth: 1))
+        }
+        .buttonStyle(PressableStyle())
+        .accessibilityLabel("紧急程度：\(urgency.title)")
+        .accessibilityHint("点按切换档位")
     }
 
     private func add() {

@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import SwiftUI
 
 // MARK: - 枚举
 
@@ -19,30 +20,66 @@ enum TaskPriority: Int, Codable, CaseIterable, Identifiable {
     }
 }
 
-/// 紧急程度六档（galaxy-effort-slider 参考档位）：档位越高图标越重，最高档 Galaxy 有星尘效果。
+/// 紧急程度三档（对齐 UI 设计图）：轻微 / 重要 / 紧急。
+/// 兼容旧库六档 rawValue：0→轻微、1→重要、≥2→紧急（旧「加急/拉满/Galaxy」一律并入紧急），
+/// 旧备份 JSON 里的 3-5 也走同一映射，不会丢数据也不会崩。
 enum TaskUrgency: Int, Codable, CaseIterable, Identifiable {
-    case low = 0
-    case medium = 1
-    case high = 2
-    case extra = 3
-    case max = 4
-    case galaxy = 5
+    case mild = 0
+    case important = 1
+    case urgent = 2
 
     var id: Int { rawValue }
 
     var title: String {
         switch self {
-        case .low: return "低"
-        case .medium: return "中"
-        case .high: return "高"
-        case .extra: return "加急"
-        case .max: return "拉满"
-        case .galaxy: return "Galaxy"
+        case .mild: return "轻微"
+        case .important: return "重要"
+        case .urgent: return "紧急"
         }
     }
 
-    /// 只有最高档点亮星尘与光晕
-    var isGalaxy: Bool { self == .galaxy }
+    var symbol: String {
+        switch self {
+        case .mild: return "wind"
+        case .important: return "star.fill"
+        case .urgent: return "flame.fill"
+        }
+    }
+
+    /// 冰蓝 / 琥珀金 / 珊瑚红
+    var tint: Color {
+        switch self {
+        case .mild: return Color(red: 96 / 255, green: 165 / 255, blue: 250 / 255)
+        case .important: return Color(red: 245 / 255, green: 158 / 255, blue: 11 / 255)
+        case .urgent: return Color(red: 244 / 255, green: 63 / 255, blue: 94 / 255)
+        }
+    }
+
+    var tintComponents: (red: Double, green: Double, blue: Double) {
+        switch self {
+        case .mild: return (96 / 255, 165 / 255, 250 / 255)
+        case .important: return (245 / 255, 158 / 255, 11 / 255)
+        case .urgent: return (244 / 255, 63 / 255, 94 / 255)
+        }
+    }
+
+    /// 点击循环：轻微 → 重要 → 紧急 → 轻微
+    var next: TaskUrgency {
+        switch self {
+        case .mild: return .important
+        case .important: return .urgent
+        case .urgent: return .mild
+        }
+    }
+
+    /// 旧数据迁移：3-5 档（加急/拉满/Galaxy）并入「紧急」
+    init(legacyRaw: Int) {
+        switch legacyRaw {
+        case ...0: self = .mild
+        case 1: self = .important
+        default: self = .urgent
+        }
+    }
 }
 
 enum RepeatKind: String, Codable, CaseIterable, Identifiable {
@@ -136,7 +173,7 @@ final class TaskItem {
         reminder: ReminderOffset = .none,
         repeatKind: RepeatKind = .none,
         tags: [String] = [],
-        urgency: TaskUrgency = .low
+        urgency: TaskUrgency = .mild
     ) {
         self.title = title
         self.notes = notes
@@ -168,7 +205,7 @@ final class TaskItem {
     }
 
     var urgency: TaskUrgency {
-        get { TaskUrgency(rawValue: urgencyRaw) ?? .low }
+        get { TaskUrgency(legacyRaw: urgencyRaw) }
         set { urgencyRaw = newValue.rawValue }
     }
 

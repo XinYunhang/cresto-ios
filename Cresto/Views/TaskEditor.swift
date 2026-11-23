@@ -54,7 +54,6 @@ struct TaskEditor: View {
             ScrollView {
                 VStack(spacing: Theme.cardGap) {
                     titleCard
-                    urgencyCard
                     timeCard
                     attributesCard
                     subtaskCard
@@ -92,28 +91,39 @@ struct TaskEditor: View {
         !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    // MARK: 标题
+    // MARK: 顶部卡（要做点什么？ + 紧急程度三档滑块，设计图：同一张深灰卡，0.5pt 细分割）
 
     private var titleCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 0) {
             TextField("要做点什么？", text: $title, axis: .vertical)
                 .font(.system(size: 18, weight: .medium))
                 .foregroundStyle(Theme.text)
                 .focused($titleFocused)
                 .lineLimit(1...3)
+                .padding(.vertical, 14)
+
+            Rectangle()
+                .fill(Color.white.opacity(0.08))
+                .frame(height: 0.5)
+
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text("紧急程度")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.textSecondary)
+                    Spacer()
+                    Text(urgency.title)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(urgency.tint)
+                        .animation(.snappy(duration: 0.2), value: urgency)
+                }
+                UrgencySlider(selection: $urgency)
+            }
+            .padding(.vertical, 12)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .cardSurface()
-    }
-
-    // MARK: 紧急程度（紧接待办内容正下方）
-
-    private var urgencyCard: some View {
-        UrgencySlider(selection: $urgency)
-            .padding(.vertical, 4)
-            .cardSurface()
-            // 射线粒子允许溢出滑块场，但裁切在卡片内（spec：卡片允许粒子溢出，场景边界裁切）
-            .clipShape(RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous))
     }
 
     // MARK: 时间
@@ -278,7 +288,7 @@ struct TaskEditor: View {
             Spacer(minLength: 8)
             content()
         }
-        .frame(minHeight: 44)
+        .frame(minHeight: 52)
         .padding(.horizontal, 2)
     }
 
@@ -342,7 +352,7 @@ struct TaskEditor: View {
                 .transition(.opacity.combined(with: .scale(scale: 0.95, anchor: .leading)))
             }
         }
-        .frame(minHeight: 44, alignment: .leading)
+        .frame(minHeight: 52, alignment: .leading)
         .padding(.horizontal, 2)
         .padding(.vertical, 8)
         .animation(.snappy(duration: 0.22), value: tags)
@@ -390,7 +400,8 @@ struct TaskEditor: View {
     }
 
     private var divider: some View {
-        Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1)
+        // 设计图：0.5pt 细分线，三行等距
+        Rectangle().fill(Color.white.opacity(0.08)).frame(height: 0.5)
     }
 
     // MARK: 子任务
