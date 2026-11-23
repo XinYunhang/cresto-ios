@@ -511,10 +511,9 @@ struct MetaChipData: Identifiable {
     var urgency: TaskUrgency? = nil
 }
 
-/// stacked-metadata 复刻（v7 修订）：三枚胶囊右锚叠放，展开时向右铺开、再点收起。
-/// 收起→展开用「负间距 → 正间距」，布局宽度随状态变化（收起时给标题让出空间），
-/// 不靠偏移外推，避免把整行内容顶出屏幕；互斥（切行反向同动）由外部 expandedMetaID 管理。
-/// 文字全部 fixedSize + 容器裁剪，杜绝展开瞬间逐字重排顿挫；弹簧 0.34/0.84 液体感过渡。
+/// stacked-metadata 复刻（v8.2 性能修订）：三枚胶囊右锚叠放，展开时 offset 回 0 铺开。
+/// 收起/展开只改 transform（offset 叠入 ≤60pt，行容器已 clipped 不会外溢），
+/// 间距与尺寸恒定、文字 fixedSize——零布局重排；互斥由外部 expandedMetaID 管理。
 private struct MetaStack: View {
     let chips: [MetaChipData]
     let isExpanded: Bool
@@ -527,10 +526,13 @@ private struct MetaStack: View {
 
     var body: some View {
         Button(action: onToggle) {
-            HStack(spacing: isExpanded ? 4 : -14) {
+            // 展开/收起只做 transform 偏移（GPU 合成），不改间距/宽度——
+            // 不触发文字重排与整行 relayout，点击展开不再卡顿
+            HStack(spacing: 4) {
                 let visible = Array(chips.prefix(3))
                 ForEach(visible.indices, id: \.self) { index in
                     chipView(visible[index])
+                        .offset(x: CGFloat(2 - index) * 30 * (isExpanded ? 0 : 1))
                 }
             }
             .animation(reduceMotion ? nil : spring, value: isExpanded)
@@ -551,8 +553,9 @@ private struct MetaStack: View {
     }
 }
 
-/// 紧急度发光圆点标签：收起 = 带柔和光晕的小圆点（极简不抢眼）；
-/// 展开 = ● 档位 胶囊（宽度动画 + blur 3.5→0 + opacity 过渡，文字 fixedSize 永不重排）
+/// 紧急度标签：尺寸与普通标签完全一致（26pt 胶囊、同内边距）。
+/// 收起 = 磨砂玻璃底 + 档位色透出 + 圆点柔光 + 文字虚化成一片色晕（透过模糊玻璃的观感）；
+/// 展开 = 清晰「● 档位」胶囊。全程固定尺寸，不做宽度/布局动画，点击零重排。
 private struct MetaUrgencyChip: View {
     let tier: TaskUrgency
     let isExpanded: Bool
@@ -564,26 +567,31 @@ private struct MetaUrgencyChip: View {
     }
 
     var body: some View {
-        HStack(spacing: isExpanded ? 5 : 0) {
+        HStack(spacing: 5) {
             Circle()
                 .fill(tier.tint)
                 .frame(width: 9, height: 9)
-                .shadow(color: tier.tint.opacity(0.8), radius: isExpanded ? 4 : 6)
+                .shadow(color: tier.tint.opacity(0.85), radius: 4)
 
             Text(tier.title)
                 .font(.system(size: 10.5, weight: .medium))
-                .foregroundStyle(tier.tint.opacity(0.95))
+                .foregroundStyle(tier.tint)
                 .fixedSize(horizontal: true, vertical: false)
-                .frame(width: isExpanded ? textWidth : 0, alignment: .leading)
+                .frame(width: textWidth, alignment: .leading)
                 .clipped()
                 .blur(radius: isExpanded ? 0 : 3.5)
-                .opacity(isExpanded ? 1 : 0)
+                .opacity(isExpanded ? 1 : 0.5)
         }
-        .padding(.horizontal, isExpanded ? 9 : 5)
+        .padding(.horizontal, 9)
         .frame(height: 26)
-        .background(Capsule().fill(tier.tint.opacity(0.12)).opacity(isExpanded ? 1 : 0))
-        .overlay(Capsule().strokeBorder(tier.tint.opacity(0.32), lineWidth: 1).opacity(isExpanded ? 1 : 0))
-        .animation(reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.84), value: isExpanded)
+        .background(
+            ZStack {
+                Capsule().fill(.ultraThinMaterial)                       // 磨砂玻璃
+                Capsule().fill(tier.tint.opacity(isExpanded ? 0.12 : 0.20)) // 收起时颜色更透
+            }
+        )
+        .overlay(Capsule().strokeBorder(tier.tint.opacity(0.30), lineWidth: 1))
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: isExpanded)
         .accessibilityLabel("紧急程度 \(tier.title)")
     }
 }

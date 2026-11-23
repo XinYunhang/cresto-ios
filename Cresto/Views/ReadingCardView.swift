@@ -19,8 +19,16 @@ struct ReadingCardView: View {
     @State private var isRefreshing = false
     /// 节流：10 分钟内不重复同步（切回 Tab 不再触发完整加载）
     @State private var lastRefreshAt: Date?
+    /// 同步问题（未配置 Key / 请求失败）：顶部右侧给出可点击入口，不再静默显示灰格
+    @State private var syncIssue: Issue?
+    @State private var isSettingsPresented = false
 
     @Environment(\.scenePhase) private var scenePhase
+
+    private enum Issue: Equatable {
+        case notConfigured
+        case failed
+    }
 
     private enum Phase { case skeleton, content }
 
@@ -51,7 +59,11 @@ struct ReadingCardView: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .wereadDataUpdated)) { _ in
+            syncIssue = nil
             withAnimation(.easeInOut(duration: 0.25)) { phase = .content }
+        }
+        .sheet(isPresented: $isSettingsPresented) {
+            SettingsView()
         }
     }
 
@@ -76,11 +88,33 @@ struct ReadingCardView: View {
                 .font(.system(size: 15, weight: .medium))
                 .foregroundStyle(Theme.text)
             Spacer(minLength: 8)
-            Text(trailing.text)
-                .font(.system(size: 12, weight: trailing.emphasized ? .medium : .regular))
-                .foregroundStyle(trailing.color)
-                .monospacedDigit()
-                .lineLimit(1)
+
+            if selectedKey == nil, let issue = syncIssue {
+                // 问题态：可点击入口（未配置 → 去设置；失败 → 重试）
+                Button {
+                    if issue == .notConfigured {
+                        isSettingsPresented = true
+                    } else {
+                        Task { await refresh() }
+                    }
+                } label: {
+                    HStack(spacing: 2) {
+                        Text(issue == .notConfigured ? "未配置 · 去设置" : "同步失败 · 重试")
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 9, weight: .semibold))
+                    }
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(WeReadHeat.green)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            } else {
+                Text(trailing.text)
+                    .font(.system(size: 12, weight: trailing.emphasized ? .medium : .regular))
+                    .foregroundStyle(trailing.color)
+                    .monospacedDigit()
+                    .lineLimit(1)
+            }
         }
     }
 
@@ -294,9 +328,16 @@ struct ReadingCardView: View {
         do {
             let snapshot = try await WeReadService.shared.fetch()
             WeReadStore.apply(snapshot, in: context)
+            syncIssue = nil
             withAnimation(.easeInOut(duration: 0.3)) { phase = .content }
         } catch {
-            // 未配置 / 弱网 / 超时：回退本地缓存；无缓存也退出骨架屏（灰格 + 暂无在读），不卡 loading
+            // 未配置 → 「去设置」；其余（弱网/超时/接口错）→ 「重试」；
+            // 两种情况都回退本地缓存并退出骨架屏，不卡 loading
+            if let typed = error as? WeReadService.WeReadError, case .notConfigured = typed {
+                syncIssue = .notConfigured
+            } else {
+                syncIssue = .failed
+            }
             withAnimation(.easeInOut(duration: 0.3)) { phase = .content }
         }
     }

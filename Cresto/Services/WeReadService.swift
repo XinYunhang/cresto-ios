@@ -135,7 +135,7 @@ actor WeReadService {
         request.httpMethod = "POST"
         request.setValue("Bearer \(config.key)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.timeoutInterval = 2.0
+        request.timeoutInterval = 3.0   // 弱网仍回退缓存；2s 在部分蜂窝网络下过紧
 
         var body = params
         body["api_name"] = api
