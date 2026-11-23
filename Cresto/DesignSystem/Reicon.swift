@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Reicon 线性图标（reicon.dev · MIT · 作者 Dev Chauhan）。
 /// SVG 矢量资源位于 `Assets.xcassets/Reicons`，全部开启 preserves-vector-representation
@@ -52,8 +53,7 @@ struct ReiconIcon: View {
     var size: CGFloat = 14
 
     var body: some View {
-        Image(icon.rawValue)
-            .renderingMode(.template)
+        Image(uiImage: Reicon.templateImage(icon))
             .resizable()
             .interpolation(.high)
             .scaledToFit()
@@ -61,9 +61,20 @@ struct ReiconIcon: View {
     }
 }
 
+extension Reicon {
+    /// 统一从资产目录取图并**强制 alwaysTemplate**：
+    /// SVG 矢量资产在部分系统上会忽略 `renderingMode(.template)` / 资产里的
+    /// template-rendering-intent，露出 SVG 原始黑色填充（深色模式下表现为黑块）。
+    /// 走 UIImage 的 alwaysTemplate 可保证随 foregroundStyle 着色。
+    static func templateImage(_ icon: Reicon) -> UIImage {
+        guard let image = UIImage(named: icon.rawValue) else { return UIImage() }
+        return image.withRenderingMode(.alwaysTemplate)
+    }
+}
+
 extension Image {
     /// 需要自行控制 frame / 缩放时直接取模板 Image
     static func reicon(_ icon: Reicon) -> Image {
-        Image(icon.rawValue).renderingMode(.template)
+        Image(uiImage: Reicon.templateImage(icon))
     }
 }
