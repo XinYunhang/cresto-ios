@@ -81,7 +81,7 @@ actor WeReadService {
             guard let readTimes = payload["readTimes"] as? [String: Any] else { continue }
             for (timestampText, value) in readTimes {
                 guard let timestamp = Double(timestampText),
-                      let seconds = doubleValue(value), seconds > 0 else { continue }
+                      let seconds = Self.doubleValue(value), seconds > 0 else { continue }
                 let day = Date(timeIntervalSince1970: timestamp)
                 let key = UsageStore.key(for: day)
                 let minutes = max(1, Int((seconds / 60).rounded(.up)))
@@ -103,9 +103,9 @@ actor WeReadService {
         guard !books.isEmpty else { return nil }
 
         let sorted = books.sorted {
-            (intValue($0["readUpdateTime"]) ?? 0) > (intValue($1["readUpdateTime"]) ?? 0)
+            (Self.intValue($0["readUpdateTime"]) ?? 0) > (Self.intValue($1["readUpdateTime"]) ?? 0)
         }
-        let candidate = sorted.first(where: { (intValue($0["finishReading"]) ?? 0) != 1 }) ?? sorted.first
+        let candidate = sorted.first(where: { (Self.intValue($0["finishReading"]) ?? 0) != 1 }) ?? sorted.first
         guard let candidate,
               let bookId = candidate["bookId"] as? String,
               let title = candidate["title"] as? String, !title.isEmpty else {
@@ -116,7 +116,7 @@ actor WeReadService {
         var progress = 0.0
         if let progressPayload = try? await call(config, api: "/book/getprogress", params: ["bookId": bookId]),
            let bookInfo = progressPayload["book"] as? [String: Any],
-           let percent = intValue(bookInfo["progress"]) {
+           let percent = Self.intValue(bookInfo["progress"]) {
             progress = Double(min(100, max(0, percent))) / 100
         }
 
@@ -162,7 +162,7 @@ actor WeReadService {
         guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw WeReadError.malformed
         }
-        if let errcode = intValue(root["errcode"]), errcode != 0 {
+        if let errcode = Self.intValue(root["errcode"]), errcode != 0 {
             // 鉴权类错误码按未授权处理
             if let message = root["errmsg"] as? String, message.contains("auth") || message.contains("token") {
                 throw WeReadError.unauthorized
