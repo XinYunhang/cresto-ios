@@ -1,25 +1,26 @@
 import Foundation
 
-/// 微信读书同步服务。
+/// 微信读书同步服务（官方 Agent API Gateway）。
 ///
-/// ⚠️ 接口契约状态（2026-11-24，如实标注）：本轮任务提供了 Key，但**未附带接口文档/地址**，
-/// 公网检索也未找到 `wrk-` 前缀的已知服务。当前实现按「最小通用约定」：
-///   GET {endpoint}
-///   Authorization: Bearer {key}
-///   期望 JSON：
-///   {
-///     "days": [{"date": "2026-11-23", "minutes": 48}, ...],
-///     "current_book": {"title": "惊悚乐园", "author": "三天两觉",
-///                      "cover": "https://...", "progress": 0.7}
-///   }
-/// decode 层做了容错（days/date/dateKey/day、minutes/duration/readTime、
-/// currentBook/current_book/book、progress 0-1 或 0-100）。
-/// 拿到正式接口文档后，**只需改本文件的请求头与 decode**，UI / 缓存 / 备份不动。
+/// 契约来源：Tencent/WeChatReading 官方技能 `weread-skills` v1.0.6（SKILL.md / readdata.md / shelf.md / book.md）：
+///   POST https://i.weread.qq.com/api/agent/gateway
+///   Authorization: Bearer <wrk-...>
+///   Body（业务参数平铺，不包 params）：{"api_name": "...", <业务参数...>, "skill_version": "1.0.6"}
+///   errcode 非 0 即错误。
 ///
-/// 凭证：Key 存钥匙串（com.xinyunhang.cresto.weread），或回退 profile.plist 本地默认（不进仓库）；
-/// 接口地址存 UserDefaults（设置页可改），或回退 profile.plist 本地默认。
+/// 本 App 用到的三个接口：
+///   /readdata/detail  {mode:"monthly", baseTime: 0 或 上月首日时间戳}
+///                     → readTimes: { 分桶起始时间戳(秒) : 秒数 }，按天分桶；totalReadTime 以「秒」为单位
+///   /shelf/sync       → books[] {bookId, title, author, cover, readUpdateTime, finishReading}
+///   /book/getprogress {bookId} → book.progress 为 0-100 整数（1 = 1%，不是 100%）
+///
+/// 凭证：Key 存钥匙串（com.xinyunhang.cresto.weread），回退 profile.plist 本地默认（不进仓库）；
+/// 接口地址可在设置页覆盖，默认官方 Gateway。超时 2s：弱网自动回退本地缓存。
 actor WeReadService {
     static let shared = WeReadService()
+
+    static let defaultEndpoint = "https://i.weread.qq.com/api/agent/gateway"
+    static let skillVersion = "1.0.6"
 
     struct Config {
         let endpoint: URL
@@ -30,43 +31,116 @@ actor WeReadService {
         case notConfigured
         case unauthorized
         case network(String)
+        case server(String)
         case malformed
 
         var errorDescription: String? {
             switch self {
-            case .notConfigured: return "还没配置微信读书接口地址或 Key，去设置页填一下"
+            case .notConfigured: return "还没配置微信读书 Key，去设置页填一下"
             case .unauthorized: return "Key 无效或已失效，去设置页检查"
             case .network(let detail): return "网络不通：\(detail)"
-            case .malformed: return "返回结构对不上（接口契约待文档校准）"
+            case .server(let detail): return "微信读书接口返回错误（\(detail)）"
+            case .malformed: return "返回结构对不上，稍后再试"
             }
         }
     }
 
-    /// 端点优先级：设置页保存的 UserDefaults → profile.plist 本地默认；Key：钥匙串 → profile.plist 本地默认
+    /// 端点优先级：设置页保存的 UserDefaults → profile.plist 本地默认 → 官方 Gateway
+    /// Key：钥匙串 → profile.plist 本地默认
     static func resolvedConfig() -> Config? {
         let savedEndpoint = UserDefaults.standard.string(forKey: "wereadEndpoint")?
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        let endpointText = (savedEndpoint?.isEmpty == false ? savedEndpoint : nil) ?? LocalProfile.wereadEndpoint
+        let endpointText = (savedEndpoint?.isEmpty == false ? savedEndpoint : nil)
+            ?? LocalProfile.wereadEndpoint
+            ?? defaultEndpoint
         let key = KeychainService.load(service: KeychainService.wereadService, account: KeychainService.wereadAccount)
             ?? LocalProfile.wereadAPIKey
 
-        guard let endpointText, !endpointText.isEmpty,
-              let endpoint = URL(string: endpointText),
-              let key, !key.isEmpty else {
+        guard let key, !key.isEmpty, let endpoint = URL(string: endpointText) else {
             return nil
         }
         return Config(endpoint: endpoint, key: key)
     }
 
-    /// 拉取近 30 天阅读记录与当前在读（超时 2s：弱网自动回退本地缓存）
+    /// 拉取近 30 天阅读记录与当前在读：
+    /// 本月 + 本月之前的自然月（覆盖 30 天窗口）两次 readdata，一次 shelf，一次 getprogress。
     func fetch() async throws -> WeReadSnapshot {
         guard let config = Self.resolvedConfig() else { throw WeReadError.notConfigured }
 
+        async let currentMonth = call(config, api: "/readdata/detail", params: ["mode": "monthly", "baseTime": 0])
+        async let previousMonth = call(config, api: "/readdata/detail", params: ["mode": "monthly", "baseTime": Self.previousMonthTimestamp()])
+        async let shelf = call(config, api: "/shelf/sync", params: [:])
+
+        let currentPayload = try await currentMonth
+        let previousPayload = try await previousMonth
+        let shelfPayload = try await shelf
+
+        // 近 30 天：两个月度分桶合并（key 为分桶起始时间戳，value 为秒）
+        var minutesByKey: [String: Int] = [:]
+        for payload in [currentPayload, previousPayload] {
+            guard let readTimes = payload["readTimes"] as? [String: Any] else { continue }
+            for (timestampText, value) in readTimes {
+                guard let timestamp = Double(timestampText),
+                      let seconds = doubleValue(value), seconds > 0 else { continue }
+                let day = Date(timeIntervalSince1970: timestamp)
+                let key = UsageStore.key(for: day)
+                let minutes = max(1, Int((seconds / 60).rounded(.up)))
+                minutesByKey[key] = max(minutesByKey[key] ?? 0, minutes)
+            }
+        }
+
+        let book = await resolveCurrentBook(shelfPayload, config: config)
+
+        return WeReadSnapshot(
+            days: minutesByKey.map { WeReadSnapshot.Day(dateKey: $0.key, minutes: $0.value) },
+            book: book
+        )
+    }
+
+    /// 正在读：书架里最近阅读且未读完的书；都读完则取最近阅读的一本；进度另查 getprogress
+    private func resolveCurrentBook(_ shelfPayload: [String: Any], config: Config) async -> WeReadSnapshot.Book? {
+        let books = shelfPayload["books"] as? [[String: Any]] ?? []
+        guard !books.isEmpty else { return nil }
+
+        let sorted = books.sorted {
+            (intValue($0["readUpdateTime"]) ?? 0) > (intValue($1["readUpdateTime"]) ?? 0)
+        }
+        let candidate = sorted.first(where: { (intValue($0["finishReading"]) ?? 0) != 1 }) ?? sorted.first
+        guard let candidate,
+              let bookId = candidate["bookId"] as? String,
+              let title = candidate["title"] as? String, !title.isEmpty else {
+            return nil
+        }
+
+        // 进度：0-100 整数（1 = 1%）；查询失败不影响热力图
+        var progress = 0.0
+        if let progressPayload = try? await call(config, api: "/book/getprogress", params: ["bookId": bookId]),
+           let bookInfo = progressPayload["book"] as? [String: Any],
+           let percent = intValue(bookInfo["progress"]) {
+            progress = Double(min(100, max(0, percent))) / 100
+        }
+
+        return WeReadSnapshot.Book(
+            title: title,
+            author: (candidate["author"] as? String) ?? "",
+            coverURL: (candidate["cover"] as? String) ?? "",
+            progress: progress
+        )
+    }
+
+    // MARK: - Gateway 调用
+
+    private func call(_ config: Config, api: String, params: [String: Any]) async throws -> [String: Any] {
         var request = URLRequest(url: config.endpoint)
-        request.httpMethod = "GET"
+        request.httpMethod = "POST"
         request.setValue("Bearer \(config.key)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.timeoutInterval = 2.0
+
+        var body = params
+        body["api_name"] = api
+        body["skill_version"] = Self.skillVersion
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let data: Data
         let response: URLResponse
@@ -85,60 +159,26 @@ actor WeReadService {
             throw WeReadError.network("HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0)")
         }
 
-        return try Self.decode(data)
-    }
-
-    // MARK: - 解码（唯一需要按接口文档校准的位置）
-
-    static func decode(_ data: Data) throws -> WeReadSnapshot {
         guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw WeReadError.malformed
         }
-        let container = (root["data"] as? [String: Any]) ?? root
-
-        let rawDays = (container["days"] as? [[String: Any]])
-            ?? (container["read_days"] as? [[String: Any]])
-            ?? (container["stats"] as? [[String: Any]])
-            ?? []
-
-        var days: [WeReadSnapshot.Day] = []
-        for item in rawDays {
-            let dateText = (item["date"] as? String)
-                ?? (item["dateKey"] as? String)
-                ?? (item["day"] as? String)
-                ?? ""
-            let minutes = intValue(item["minutes"])
-                ?? intValue(item["duration"])
-                ?? intValue(item["readTime"])
-                ?? intValue(item["read_minutes"])
-                ?? 0
-            let key = normalizeDateKey(dateText)
-            guard !key.isEmpty else { continue }
-            days.append(.init(dateKey: key, minutes: max(0, minutes)))
-        }
-
-        let rawBook = (container["current_book"] as? [String: Any])
-            ?? (container["currentBook"] as? [String: Any])
-            ?? (container["book"] as? [String: Any])
-        var book: WeReadSnapshot.Book?
-        if let rawBook {
-            let title = (rawBook["title"] as? String) ?? ""
-            if !title.isEmpty {
-                let author = (rawBook["author"] as? String)
-                    ?? (rawBook["authorName"] as? String)
-                    ?? ""
-                let cover = (rawBook["cover"] as? String)
-                    ?? (rawBook["coverURL"] as? String)
-                    ?? (rawBook["coverUrl"] as? String)
-                    ?? ""
-                var progress = doubleValue(rawBook["progress"]) ?? 0
-                if progress > 1 { progress /= 100 }
-                book = .init(title: title, author: author, coverURL: cover, progress: min(1, max(0, progress)))
+        if let errcode = intValue(root["errcode"]), errcode != 0 {
+            // 鉴权类错误码按未授权处理
+            if let message = root["errmsg"] as? String, message.contains("auth") || message.contains("token") {
+                throw WeReadError.unauthorized
             }
+            throw WeReadError.server("errcode \(errcode)")
         }
+        return root
+    }
 
-        guard !days.isEmpty || book != nil else { throw WeReadError.malformed }
-        return WeReadSnapshot(days: days, book: book)
+    // MARK: - 工具
+
+    private static func previousMonthTimestamp() -> Int {
+        let calendar = Calendar.current
+        let firstOfThisMonth = calendar.dateInterval(of: .month, for: Date())?.start ?? Date()
+        let previous = calendar.date(byAdding: .month, value: -1, to: firstOfThisMonth) ?? firstOfThisMonth
+        return Int(previous.timeIntervalSince1970)
     }
 
     private static func intValue(_ value: Any?) -> Int? {
@@ -161,13 +201,5 @@ actor WeReadService {
         case let text as String: return Double(text)
         default: return nil
         }
-    }
-
-    /// 归一化 dateKey：接受 "2026-11-23" / "2026/11/23" / ISO8601 前缀
-    private static func normalizeDateKey(_ text: String) -> String {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.count >= 8 else { return "" }
-        let normalized = trimmed.replacingOccurrences(of: "/", with: "-")
-        return String(normalized.prefix(10))
     }
 }

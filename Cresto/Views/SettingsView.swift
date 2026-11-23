@@ -255,7 +255,7 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("微信读书同步").cardLabel()
 
-            TextField("接口地址（接口文档提供）", text: $wereadEndpoint)
+            TextField("https://i.weread.qq.com/api/agent/gateway", text: $wereadEndpoint)
                 .font(.system(size: 13.5))
                 .foregroundStyle(Theme.text)
                 .autocorrectionDisabled()
@@ -292,7 +292,7 @@ struct SettingsView: View {
                     .foregroundStyle(Theme.textSecondary)
             }
 
-            Text("Key 只存本机钥匙串，不进仓库与日志；接口地址与返回格式待正式文档校准后即可对接。")
+            Text("Key 只存本机钥匙串，不进仓库与日志；默认走官方 Agent Gateway（2s 超时，弱网自动回退本地缓存）。")
                 .font(.system(size: 11))
                 .lineSpacing(3)
                 .foregroundStyle(Theme.textTertiary)
