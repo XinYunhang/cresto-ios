@@ -11,6 +11,8 @@ settings:
     SWIFT_STRICT_CONCURRENCY: minimal
     ENABLE_USER_SCRIPT_SANDBOXING: NO
     CODE_SIGN_STYLE: Manual
+    # 新增 Assets.xcassets 后不再强制找 AppIcon 图标集（暂无应用图标）
+    ASSETCATALOG_COMPILER_APPICON_NAME: ""
 
 targets:
   Cresto:
