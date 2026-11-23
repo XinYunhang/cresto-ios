@@ -19,6 +19,12 @@ struct RootView: View {
 
     @State private var ticker = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
 
+    /// 订阅续费提醒扫描（启动 / 回前台；保存订阅后由编辑页自行触发）
+    private func syncSubscriptions() {
+        let subs = (try? context.fetch(FetchDescriptor<Subscription>())) ?? []
+        SubscriptionReminderService.sync(subs, in: context)
+    }
+
     var body: some View {
         ZStack(alignment: .bottom) {
             Theme.bg.ignoresSafeArea()
@@ -45,7 +51,7 @@ struct RootView: View {
                 }
 
                 if isMounted(.ledger) {
-                    LedgerView()
+                    SubscriptionMainView()
                         .tabPageVisible(tab == .ledger)
                 }
 
@@ -78,10 +84,12 @@ struct RootView: View {
         .onAppear {
             if activeSince == nil { activeSince = Date() }
             AppLog.info("App 启动 · 主题 \(appTheme)")
+            syncSubscriptions()
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
                 activeSince = Date()
+                syncSubscriptions()
             } else {
                 pauseUsage()
             }
@@ -189,7 +197,7 @@ enum PreviewData {
         let container = try! ModelContainer(
             for: TaskItem.self, Subtask.self, Course.self, CourseSlot.self,
             TimetableSettings.self, DailyUsage.self, DeepSeekDay.self, DeepSeekState.self,
-            WeReadDay.self, WeReadBook.self,
+            WeReadDay.self, WeReadBook.self, Subscription.self,
             configurations: config
         )
         SeedData.seedIfNeeded(container.mainContext)

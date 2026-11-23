@@ -8,6 +8,7 @@ struct SettingsView: View {
     @Query private var tasks: [TaskItem]
     @Query private var courses: [Course]
     @Query private var usages: [DailyUsage]
+    @Query private var subscriptions: [Subscription]
 
     @AppStorage("appTheme") private var appTheme = "system"
 
@@ -348,6 +349,8 @@ struct SettingsView: View {
             row("课程", "\(courses.count) 门")
             divider
             row("使用记录", "\(usages.count) 天")
+            divider
+            row("订阅", "\(subscriptions.count) 项")
         }
         .cardSurface(padding: 0)
     }

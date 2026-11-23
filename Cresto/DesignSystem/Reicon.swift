@@ -18,8 +18,12 @@ enum Reicon: String {
     case xmark = "reicon-xmark"
     case closeCircle = "reicon-close-circle"
     case chevronRight = "reicon-chevron-right"
+    case chevronLeft = "reicon-chevron-left"
     case chevronDown = "reicon-chevron-down"
     case chevronUp = "reicon-chevron-up"
+    case card = "reicon-card"
+    case pause = "reicon-pause"
+    case play = "reicon-play"
     case arrowUpRight = "reicon-arrow-up-right"
     case arrowDownRight = "reicon-arrow-down-right"
     case refresh = "reicon-refresh"
@@ -76,5 +80,47 @@ extension Image {
     /// 需要自行控制 frame / 缩放时直接取模板 Image
     static func reicon(_ icon: Reicon) -> Image {
         Image(uiImage: Reicon.templateImage(icon))
+    }
+}
+
+// MARK: - 品牌图标（Reicon 400+ Brand Logos，保留品牌原色，不参与 template 着色）
+
+enum BrandIcon: String, CaseIterable, Identifiable {
+    case openai = "brand-openai"
+    case gemini = "brand-gemini"
+    case google = "brand-google"
+    case apple = "brand-apple"
+    case appleMusic = "brand-apple-music"
+    case claude = "brand-claude"
+    case deepseek = "brand-deepseek"
+    case generic
+
+    var id: String { rawValue }
+
+    var assetName: String {
+        self == .generic ? "reicon-card" : rawValue
+    }
+
+    static func from(raw: String) -> BrandIcon {
+        BrandIcon(rawValue: raw) ?? .generic
+    }
+}
+
+/// 订阅服务品牌图标：品牌色原样渲染；通用订阅回退为 Reicon 线条卡图标（template）。
+struct BrandLogo: View {
+    let brand: BrandIcon
+    var size: CGFloat = 24
+
+    var body: some View {
+        if brand == .generic {
+            ReiconIcon(icon: .card, size: size)
+                .foregroundStyle(Theme.text)
+        } else {
+            Image(brand.assetName)
+                .resizable()
+                .interpolation(.high)
+                .scaledToFit()
+                .frame(width: size, height: size)
+        }
     }
 }

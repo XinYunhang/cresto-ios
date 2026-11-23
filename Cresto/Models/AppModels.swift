@@ -21,7 +21,7 @@ enum AppTab: String, CaseIterable, Identifiable {
         case .overview: return "概览"
         case .tasks: return "待办"
         case .course: return "课表"
-        case .ledger: return "记账"
+        case .ledger: return "订阅"
         case .api: return "API"
         }
     }

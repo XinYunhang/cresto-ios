@@ -15,9 +15,11 @@ struct BackupFile: Codable {
     /// v8 新增：微信读书缓存（阅读热力图 + 在读单书）
     var wereadDays: [WeReadDayDTO]?
     var wereadBook: WeReadBookDTO?
+    /// v11 新增：订阅管理
+    var subscriptions: [SubscriptionDTO]?
 
     var totalItems: Int {
-        tasks.count + courses.count + usage.count + (deepseek?.count ?? 0) + (wereadDays?.count ?? 0) + (wereadBook == nil ? 0 : 1)
+        tasks.count + courses.count + usage.count + (deepseek?.count ?? 0) + (wereadDays?.count ?? 0) + (wereadBook == nil ? 0 : 1) + (subscriptions?.count ?? 0)
     }
 
     struct TaskDTO: Codable {
@@ -98,6 +100,24 @@ struct BackupFile: Codable {
         var progress: Double
         var updatedAt: Date
     }
+
+    struct SubscriptionDTO: Codable {
+        var id: UUID
+        var name: String
+        var price: Double
+        var currencyRaw: String
+        var cycleRaw: String
+        var nextChargeDate: Date
+        var anchorDay: Int
+        var paymentRaw: String
+        var categoryRaw: String
+        var brandRaw: String
+        var isPaused: Bool
+        var remindEnabled: Bool
+        var remindDaysBefore: Int
+        var lastRemindedCycleKey: String
+        var createdAt: Date
+    }
 }
 
 // MARK: - 快照
@@ -157,6 +177,7 @@ enum BackupService {
         let deepseek = (try? context.fetch(FetchDescriptor<DeepSeekDay>())) ?? []
         let wereadDays = (try? context.fetch(FetchDescriptor<WeReadDay>())) ?? []
         let wereadBook = (try? context.fetch(FetchDescriptor<WeReadBook>()))?.first
+        let subscriptions = (try? context.fetch(FetchDescriptor<Subscription>())) ?? []
 
         return BackupFile(
             version: 1,
@@ -228,6 +249,25 @@ enum BackupService {
                     coverURL: $0.coverURL,
                     progress: $0.progress,
                     updatedAt: $0.updatedAt
+                )
+            },
+            subscriptions: subscriptions.map {
+                BackupFile.SubscriptionDTO(
+                    id: $0.id,
+                    name: $0.name,
+                    price: $0.price,
+                    currencyRaw: $0.currencyRaw,
+                    cycleRaw: $0.cycleRaw,
+                    nextChargeDate: $0.nextChargeDate,
+                    anchorDay: $0.anchorDay,
+                    paymentRaw: $0.paymentRaw,
+                    categoryRaw: $0.categoryRaw,
+                    brandRaw: $0.brandRaw,
+                    isPaused: $0.isPaused,
+                    remindEnabled: $0.remindEnabled,
+                    remindDaysBefore: $0.remindDaysBefore,
+                    lastRemindedCycleKey: $0.lastRemindedCycleKey,
+                    createdAt: $0.createdAt
                 )
             }
         )
@@ -338,6 +378,7 @@ enum BackupService {
         for item in try context.fetch(FetchDescriptor<DeepSeekState>()) { context.delete(item) }
         for item in try context.fetch(FetchDescriptor<WeReadDay>()) { context.delete(item) }
         for item in try context.fetch(FetchDescriptor<WeReadBook>()) { context.delete(item) }
+        for item in try context.fetch(FetchDescriptor<Subscription>()) { context.delete(item) }
 
         for dto in backup.tasks {
             let task = TaskItem(title: dto.title, notes: dto.notes)
@@ -408,6 +449,26 @@ enum BackupService {
         }
 
         // 微信读书缓存（阅读热力图 + 在读单书）
+        for dto in backup.subscriptions ?? [] {
+            let sub = Subscription()
+            sub.id = dto.id
+            sub.name = dto.name
+            sub.price = dto.price
+            sub.currencyRaw = dto.currencyRaw
+            sub.cycleRaw = dto.cycleRaw
+            sub.nextChargeDate = dto.nextChargeDate
+            sub.anchorDay = dto.anchorDay
+            sub.paymentRaw = dto.paymentRaw
+            sub.categoryRaw = dto.categoryRaw
+            sub.brandRaw = dto.brandRaw
+            sub.isPaused = dto.isPaused
+            sub.remindEnabled = dto.remindEnabled
+            sub.remindDaysBefore = dto.remindDaysBefore
+            sub.lastRemindedCycleKey = dto.lastRemindedCycleKey
+            sub.createdAt = dto.createdAt
+            context.insert(sub)
+        }
+
         for dto in backup.wereadDays ?? [] {
             context.insert(WeReadDay(dateKey: dto.dateKey, minutes: dto.minutes))
         }
