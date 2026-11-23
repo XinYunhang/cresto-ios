@@ -28,7 +28,7 @@ struct TaskEditor: View {
         task: TaskItem? = nil,
         defaultDate: Date? = nil,
         defaultTitle: String = "",
-        defaultUrgency: TaskUrgency = .low
+        defaultUrgency: TaskUrgency = .mild
     ) {
         self.task = task
 
