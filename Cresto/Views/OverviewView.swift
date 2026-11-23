@@ -67,6 +67,12 @@ struct OverviewView: View {
         .sheet(isPresented: $isTimePresented) {
             TimeDetailSheet()
         }
+        // 首页右下角表情球（与课表/待办 FAB 同锚点，52pt / 右 20 / 底 80）
+        .overlay(alignment: .bottomTrailing) {
+            EmotionBallView()
+                .padding(.trailing, FloatingAnchor.trailing)
+                .padding(.bottom, FloatingAnchor.bottom)
+        }
     }
 
     // MARK: 顶部
