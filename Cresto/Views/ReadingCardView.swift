@@ -17,6 +17,10 @@ struct ReadingCardView: View {
     @State private var isBookExpanded = false
     @State private var barValue: Double = 0
     @State private var isRefreshing = false
+    /// 节流：10 分钟内不重复同步（切回 Tab 不再触发完整加载）
+    @State private var lastRefreshAt: Date?
+
+    @Environment(\.scenePhase) private var scenePhase
 
     private enum Phase { case skeleton, content }
 
@@ -35,11 +39,16 @@ struct ReadingCardView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .cardSurface()
+        .cardSurface(padding: 13)
         .animation(.easeInOut(duration: 0.3), value: phase)
         .onAppear {
             if !cachedDays.isEmpty || book != nil { phase = .content }
-            Task { await refresh() }
+            Task { await refreshIfStale() }
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .active {
+                Task { await refreshIfStale() }
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .wereadDataUpdated)) { _ in
             withAnimation(.easeInOut(duration: 0.25)) { phase = .content }
@@ -49,7 +58,7 @@ struct ReadingCardView: View {
     // MARK: - 内容态
 
     private var contentBody: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             header
             heatmap
             Rectangle()
@@ -87,7 +96,8 @@ struct ReadingCardView: View {
     }
 
     private var heatmap: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 7), spacing: 8) {
+        // 紧凑化：7 列不变、间距略收、格子由正方形改为扁比例（降低总高度，保持单手点按面积）
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 7), count: 7), spacing: 7) {
             ForEach(digest.days) { day in
                 heatCell(day)
             }
@@ -97,7 +107,7 @@ struct ReadingCardView: View {
     private func heatCell(_ day: WeReadDigest.Day) -> some View {
         RoundedRectangle(cornerRadius: AppRadius.grid, style: .continuous)
             .fill(WeReadHeat.color(level: day.level))
-            .aspectRatio(1, contentMode: .fit)
+            .aspectRatio(1.22, contentMode: .fit)
             .overlay {
                 if selectedKey == day.id {
                     RoundedRectangle(cornerRadius: AppRadius.grid, style: .continuous)
@@ -238,7 +248,7 @@ struct ReadingCardView: View {
     // MARK: - 骨架屏（等尺寸轮廓 + 斜向扫光）
 
     private var skeletonBody: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text("阅读")
                     .font(.system(size: 15, weight: .medium))
@@ -249,11 +259,11 @@ struct ReadingCardView: View {
                     .frame(width: 64, height: 14)
             }
 
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 7), spacing: 8) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 7), count: 7), spacing: 7) {
                 ForEach(0..<30, id: \.self) { _ in
                     RoundedRectangle(cornerRadius: AppRadius.grid, style: .continuous)
                         .fill(Theme.surfaceRaised)
-                        .aspectRatio(1, contentMode: .fit)
+                        .aspectRatio(1.22, contentMode: .fit)
                 }
             }
 
@@ -270,9 +280,16 @@ struct ReadingCardView: View {
 
     // MARK: - 数据
 
+    /// 节流刷新：首次进入、回前台、切回 Tab 时，10 分钟内不重复请求（杜绝每次切页完整加载）
+    private func refreshIfStale() async {
+        if let last = lastRefreshAt, Date().timeIntervalSince(last) < 600 { return }
+        await refresh()
+    }
+
     private func refresh() async {
         guard !isRefreshing else { return }
         isRefreshing = true
+        lastRefreshAt = Date()
         defer { isRefreshing = false }
         do {
             let snapshot = try await WeReadService.shared.fetch()

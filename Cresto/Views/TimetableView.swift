@@ -48,7 +48,7 @@ struct TimetableView: View {
                 }
             }
             .padding(.horizontal, Theme.screenPadding)
-            .padding(.bottom, 128)
+            .padding(.bottom, Theme.bottomScrollInset)
         }
         .floatingAddButton("添加课程") {
             editingCourse = nil

@@ -29,6 +29,11 @@ enum Theme {
     static let screenPadding: CGFloat = 18
     static let cardGap: CGFloat = 10
 
+    /// 所有 Tab 页 ScrollView 的统一底部留白：
+    /// 底栏 64（58+6）+ FAB 52 + 间距 18 + 余量 ≈ 150，保证最后一张卡（含「正在读」展开）
+    /// 完全滑过悬浮底栏与 + 按钮之上。
+    static let bottomScrollInset: CGFloat = 150
+
     // MARK: 构造
 
     private static func dynamic(dark: UInt32, light: UInt32) -> Color {

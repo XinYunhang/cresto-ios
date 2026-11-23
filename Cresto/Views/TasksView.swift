@@ -63,7 +63,7 @@ struct TasksView: View {
                 ReadingCardView()
             }
             .padding(.horizontal, Theme.screenPadding)
-            .padding(.bottom, 132)
+            .padding(.bottom, Theme.bottomScrollInset)
             .frame(maxWidth: .infinity)
             .clipped()
             .simultaneousGesture(TapGesture().onEnded {

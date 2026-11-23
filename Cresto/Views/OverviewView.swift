@@ -59,7 +59,7 @@ struct OverviewView: View {
                     .padding(.top, 18)
             }
             .padding(.horizontal, Theme.screenPadding)
-            .padding(.bottom, 128)
+            .padding(.bottom, Theme.bottomScrollInset)
         }
         .sheet(isPresented: $isSearchPresented) {
             SearchView()

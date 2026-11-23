@@ -30,7 +30,7 @@ struct DeepSeekMonitorView: View {
                 costCard
             }
             .padding(.horizontal, Theme.screenPadding)
-            .padding(.bottom, 128)
+            .padding(.bottom, Theme.bottomScrollInset)
         }
         .background(Theme.bg)
         .task {

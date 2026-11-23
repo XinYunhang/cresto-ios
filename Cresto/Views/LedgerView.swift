@@ -17,7 +17,7 @@ struct LedgerView: View {
                 placeholderCard
             }
             .padding(.horizontal, Theme.screenPadding)
-            .padding(.bottom, 132)
+            .padding(.bottom, Theme.bottomScrollInset)
             .frame(maxWidth: .infinity)
         }
         .background(Theme.bg)

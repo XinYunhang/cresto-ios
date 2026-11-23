@@ -8,6 +8,8 @@ struct RootView: View {
     @AppStorage("appTheme") private var appTheme = "system"
 
     @State private var tab: AppTab = .overview
+    /// 已挂载过的页面（保活：切 Tab 只切换显隐与命中，不销毁重建）
+    @State private var mountedTabs: Set<AppTab> = [.overview]
     @State private var isQuickAddPresented = false
     @State private var isSettingsPresented = false
     @State private var activeSince: Date?
@@ -21,14 +23,60 @@ struct RootView: View {
         ZStack(alignment: .bottom) {
             Theme.bg.ignoresSafeArea()
 
-            content
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // 保活容器：页面首次访问时懒加载，之后只切换显隐/命中（避免切 Tab 销毁重建复杂列表与网格）
+            ZStack {
+                if isMounted(.overview) {
+                    OverviewView(
+                        onOpenTasks: { tab = .tasks },
+                        onAddTask: { isQuickAddPresented = true },
+                        onOpenSettings: { isSettingsPresented = true }
+                    )
+                    .tabPageVisible(tab == .overview)
+                }
+
+                if isMounted(.tasks) {
+                    TasksView(onAdd: { isQuickAddPresented = true })
+                        .tabPageVisible(tab == .tasks)
+                }
+
+                if isMounted(.course) {
+                    TimetableView()
+                        .tabPageVisible(tab == .course)
+                }
+
+                if isMounted(.ledger) {
+                    LedgerView()
+                        .tabPageVisible(tab == .ledger)
+                }
+
+                if FeatureFlags.enableDeepSeek, isMounted(.api) {
+                    DeepSeekMonitorView()
+                        .tabPageVisible(tab == .api)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            // 底边渐隐：内容与悬浮底栏之间 40pt 柔和过渡（非交互，深浅主题自适应）
+            VStack(spacing: 0) {
+                Spacer()
+                LinearGradient(
+                    colors: [Theme.bg.opacity(0), Theme.bg],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .frame(height: 40)
+            }
+            .ignoresSafeArea(edges: .bottom)
+            .allowsHitTesting(false)
 
             GlassTabBar(selection: $tab)
                 .padding(.horizontal, 16)
                 .padding(.bottom, 6)
         }
         .preferredColorScheme(colorScheme)
+        .onChange(of: tab) { _, newTab in
+            mountedTabs.insert(newTab)
+        }
         .onAppear {
             if activeSince == nil { activeSince = Date() }
             AppLog.info("App 启动 · 主题 \(appTheme)")
@@ -112,25 +160,21 @@ struct RootView: View {
         }
     }
 
-    @ViewBuilder
-    private var content: some View {
-        switch tab {
-        case .overview:
-            OverviewView(
-                onOpenTasks: { tab = .tasks },
-                onAddTask: { isQuickAddPresented = true },
-                onOpenSettings: { isSettingsPresented = true }
-            )
-        case .tasks:
-            TasksView(onAdd: { isQuickAddPresented = true })
-        case .course:
-            TimetableView()
-        case .ledger:
-            LedgerView()
-        case .api:
-            // DeepSeek 页仅在 FeatureFlags.enableDeepSeek = true 时出现在底栏；保留视图以便无损恢复
-            DeepSeekMonitorView()
-        }
+    /// 首次访问的 Tab 当帧即可渲染（`tab == page` 兜底），onChange 再纳入保活集合
+    private func isMounted(_ page: AppTab) -> Bool {
+        mountedTabs.contains(page) || tab == page
+    }
+}
+
+// MARK: - 保活页显隐
+
+private extension View {
+    /// 保活页的显隐切换：只影响透明度与命中，不参与布局重建
+    func tabPageVisible(_ isVisible: Bool) -> some View {
+        self
+            .opacity(isVisible ? 1 : 0)
+            .allowsHitTesting(isVisible)
+            .accessibilityHidden(!isVisible)
     }
 }
 
