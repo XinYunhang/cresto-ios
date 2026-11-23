@@ -31,14 +31,11 @@ struct TasksView: View {
         Dictionary(grouping: openTasks) { TaskGroup.group(for: $0.dueDate) }
     }
 
-    /// 严格「当日」口径：分母 = 今天到期未完成 + 今天完成的，逾期/以后不计入
+    /// 严格「当日」口径：只看「到期日 = 今天」的待办（含已完成），逾期/以后一律不计。
+    /// 分子也按到期日分组——今天完成的逾期任务不会虚增当日进度。
     private var todayProgress: (done: Int, total: Int) {
         let openToday = openTasks.filter { TaskGroup.group(for: $0.dueDate) == .today }.count
-        let calendar = Calendar.current
-        let doneToday = doneTasks.filter { task in
-            guard let completedAt = task.completedAt else { return false }
-            return calendar.isDateInToday(completedAt)
-        }.count
+        let doneToday = doneTasks.filter { TaskGroup.group(for: $0.dueDate) == .today }.count
         return (doneToday, doneToday + openToday)
     }
 
@@ -475,13 +472,6 @@ struct TaskRowView: View {
     /// 元数据胶囊：紧急程度 / 日期 / 提醒 / 重复 / 子任务 / 标签
     private var metaChips: [MetaChipData] {
         var chips: [MetaChipData] = []
-        if task.urgency != .mild {
-            chips.append(MetaChipData(
-                icon: task.urgency.symbol,
-                text: task.urgency.title,
-                urgency: task.urgency
-            ))
-        }
         if let due = task.dueDate {
             chips.append(MetaChipData(icon: "calendar", text: due.taskLabel(hasTime: task.hasTime)))
         }
@@ -496,6 +486,20 @@ struct TaskRowView: View {
         }
         if !task.subtasks.isEmpty {
             chips.append(MetaChipData(icon: "checklist", text: "\(task.doneSubtaskCount)/\(task.subtasks.count)"))
+        }
+
+        // 紧急度固定贴最右（叠放最上层、收起时不被其他胶囊盖住），并保证进前三不被截断
+        if task.urgency != .mild {
+            if chips.count >= 3 {
+                chips = Array(chips.prefix(2))
+            }
+            chips.append(MetaChipData(
+                icon: task.urgency.symbol,
+                text: task.urgency.title,
+                urgency: task.urgency
+            ))
+        } else if chips.count > 3 {
+            chips = Array(chips.prefix(3))
         }
         return chips
     }
@@ -587,10 +591,10 @@ private struct MetaUrgencyChip: View {
         .background(
             ZStack {
                 Capsule().fill(.ultraThinMaterial)                       // 磨砂玻璃
-                Capsule().fill(tier.tint.opacity(isExpanded ? 0.12 : 0.20)) // 收起时颜色更透
+                Capsule().fill(tier.tint.opacity(isExpanded ? 0.14 : 0.30)) // 收起时颜色更透
             }
         )
-        .overlay(Capsule().strokeBorder(tier.tint.opacity(0.30), lineWidth: 1))
+        .overlay(Capsule().strokeBorder(tier.tint.opacity(0.38), lineWidth: 1))
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: isExpanded)
         .accessibilityLabel("紧急程度 \(tier.title)")
     }

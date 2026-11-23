@@ -7,10 +7,16 @@ struct GlassTabBar: View {
     @Binding var selection: AppTab
 
     var body: some View {
-        SegmentedTabBar(selection: $selection)
-            .frame(height: 58)
-            .padding(.horizontal, 16)
-            .padding(.bottom, 6)
+        ZStack {
+            // 实心底板：内容不再透过底栏（系统镜片只在本板之上做镜面/高光）
+            Capsule(style: .continuous)
+                .fill(Theme.surface)
+
+            SegmentedTabBar(selection: $selection)
+        }
+        .frame(height: 58)
+        .padding(.horizontal, 16)
+        .padding(.bottom, 6)
     }
 }
 

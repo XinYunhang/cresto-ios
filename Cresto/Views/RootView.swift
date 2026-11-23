@@ -70,8 +70,6 @@ struct RootView: View {
             .allowsHitTesting(false)
 
             GlassTabBar(selection: $tab)
-                .padding(.horizontal, 16)
-                .padding(.bottom, 6)
         }
         .preferredColorScheme(colorScheme)
         .onChange(of: tab) { _, newTab in
