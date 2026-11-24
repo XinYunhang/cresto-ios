@@ -11,6 +11,14 @@ struct SlotItem: Identifiable {
     var id: UUID { slot.id }
 }
 
+/// sheet 一次带走「课程 + 时段」，避免 isPresented 和两个可选状态分步更新时
+/// 内容闭包读到旧值（点课程却显示成「添加课程」）。
+private struct CourseEditorContext: Identifiable {
+    let id = UUID()
+    let course: Course?
+    let slot: CourseSlot?
+}
+
 /// 课表：默认「周列表」——上面选星期，下面只显示那天的课；右上切到全景网格。
 /// 点任意课程进入编辑（不是新增）。
 struct TimetableView: View {
@@ -22,13 +30,13 @@ struct TimetableView: View {
     @State private var mode: TimetableMode = .list
     @State private var week: Int?
     @State private var selectedWeekday: Int = TimetableMath.todayWeekday
-    @State private var editingCourse: Course?
-    @State private var editingSlot: CourseSlot?
-    @State private var isEditorPresented = false
+    @State private var editorContext: CourseEditorContext?
     @State private var isImportPresented = false
+    @State private var isJSONImportPresented = false
     @State private var isManagePresented = false
     @State private var rowHeight: CGFloat = 46
-    @State private var pinchBase: CGFloat = 46
+    /// 捏合开始时锁定的行高；手势进行中不随 rowHeight 漂移
+    @State private var pinchBase: CGFloat?
 
     private var settings: TimetableSettings? { settingsList.first }
     private var currentWeek: Int { week ?? settings?.weekNumber() ?? 1 }
@@ -50,23 +58,37 @@ struct TimetableView: View {
             .padding(.horizontal, Theme.screenPadding)
             .padding(.bottom, Theme.bottomScrollInset)
         }
+        .simultaneousGesture(zoomGesture)
         .floatingAddButton("添加课程") {
-            editingCourse = nil
-            editingSlot = nil
-            isEditorPresented = true
+            editorContext = CourseEditorContext(course: nil, slot: nil)
         }
-        .sheet(isPresented: $isEditorPresented, onDismiss: {
-            editingCourse = nil
-            editingSlot = nil
-        }) {
-            CourseEditor(course: editingCourse, slot: editingSlot)
+        .sheet(item: $editorContext) { context in
+            CourseEditor(course: context.course, slot: context.slot)
         }
         .sheet(isPresented: $isImportPresented) {
             TimetableImportView()
         }
+        .sheet(isPresented: $isJSONImportPresented) {
+            TimetableJSONImportView()
+        }
         .sheet(isPresented: $isManagePresented) {
             TimetableSettingsView()
         }
+    }
+
+    /// 双指捏合：只改网格行高。手势挂在稳定的 ScrollView 上，
+    /// 不跟着会重排的网格内容一起重建；开始捏合时锁定基准行高。
+    private var zoomGesture: some Gesture {
+        MagnifyGesture(minimumScaleDelta: 0.01)
+            .onChanged { value in
+                guard mode == .grid else { return }
+                let base = pinchBase ?? rowHeight
+                if pinchBase == nil { pinchBase = base }
+                rowHeight = min(84, max(28, base * value.magnification))
+            }
+            .onEnded { _ in
+                pinchBase = nil
+            }
     }
 
     // MARK: 顶部
@@ -121,7 +143,12 @@ struct TimetableView: View {
                 Button {
                     isImportPresented = true
                 } label: {
-                    Label { Text("导入课表") } icon: { ReiconIcon(icon: .download, size: 15) }
+                    Label { Text("截图识别导入") } icon: { ReiconIcon(icon: .image, size: 15) }
+                }
+                Button {
+                    isJSONImportPresented = true
+                } label: {
+                    Label { Text("喜鹊课表 JSON 导入") } icon: { ReiconIcon(icon: .download, size: 15) }
                 }
                 ShareLink(item: shareText) {
                     Label { Text("分享课表") } icon: { ReiconIcon(icon: .share, size: 15) }
@@ -247,6 +274,12 @@ struct TimetableView: View {
         VStack(spacing: 0) {
             dayHeader
             gridBody
+
+            Text("双指捏合调整行高")
+                .font(.system(size: 9.5))
+                .foregroundStyle(Theme.textTertiary)
+                .padding(.top, 9)
+                .padding(.bottom, 2)
         }
         .padding(8)
         .background(
@@ -294,16 +327,6 @@ struct TimetableView: View {
             .frame(height: totalHeight)
         }
         .frame(height: CGFloat(periodCount) * rowHeight)
-        .simultaneousGesture(
-            MagnificationGesture()
-                .onChanged { value in
-                    rowHeight = min(72, max(30, pinchBase * value))
-                }
-                .onEnded { _ in
-                    pinchBase = rowHeight
-                }
-        )
-        .animation(.snappy(duration: 0.2), value: rowHeight)
     }
 
     private func rows(columnWidth: CGFloat) -> some View {
@@ -411,9 +434,7 @@ struct TimetableView: View {
     }
 
     private func edit(_ course: Course, _ slot: CourseSlot) {
-        editingCourse = course
-        editingSlot = slot
-        isEditorPresented = true
+        editorContext = CourseEditorContext(course: course, slot: slot)
     }
 
     private var shareText: String {
