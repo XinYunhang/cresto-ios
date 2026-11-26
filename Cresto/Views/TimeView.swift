@@ -173,7 +173,7 @@ struct TimeView: View {
     }
 
     private var divider: some View {
-        Rectangle().fill(Color.white.opacity(0.05)).frame(height: 1)
+        Rectangle().fill(Theme.stroke).frame(height: 1)
     }
 
     private func dailyAverage(_ digest: UsageDigest) -> String {

@@ -8,6 +8,7 @@ struct SubscriptionEditor: View {
     @Environment(\.dismiss) private var dismiss
 
     let subscription: Subscription?
+    var initialPreset: SubscriptionPreset? = nil
 
     @State private var name: String
     @State private var priceText: String
@@ -21,8 +22,9 @@ struct SubscriptionEditor: View {
     @State private var remindDays: Int
     @State private var validation: String?
 
-    init(subscription: Subscription?) {
+    init(subscription: Subscription?, initialPreset: SubscriptionPreset? = nil) {
         self.subscription = subscription
+        self.initialPreset = initialPreset
         if let sub = subscription {
             _name = State(initialValue: sub.name)
             _priceText = State(initialValue: String(format: "%.2f", sub.price))
@@ -34,6 +36,20 @@ struct SubscriptionEditor: View {
             _brand = State(initialValue: sub.brand)
             _remindEnabled = State(initialValue: sub.remindEnabled)
             _remindDays = State(initialValue: sub.remindDaysBefore)
+        } else if let preset = initialPreset {
+            let calendar = Calendar.current
+            _name = State(initialValue: preset.name)
+            _priceText = State(initialValue: String(format: "%.2f", preset.price))
+            _currency = State(initialValue: preset.currency)
+            _cycle = State(initialValue: preset.cycle)
+            _nextCharge = State(initialValue: calendar.date(
+                byAdding: .month, value: 1, to: calendar.startOfDay(for: Date())
+            ) ?? Date())
+            _payment = State(initialValue: preset.payment)
+            _category = State(initialValue: preset.category)
+            _brand = State(initialValue: preset.brand)
+            _remindEnabled = State(initialValue: true)
+            _remindDays = State(initialValue: 3)
         } else {
             let calendar = Calendar.current
             _name = State(initialValue: "")
@@ -252,7 +268,7 @@ struct SubscriptionEditor: View {
 
     private var formDivider: some View {
         Rectangle()
-            .fill(Color.white.opacity(0.08))
+            .fill(Theme.stroke)
             .frame(height: 0.5)
     }
 
@@ -307,12 +323,12 @@ struct SubscriptionEditor: View {
         Button(action: save) {
             Text("保存订阅")
                 .font(.system(size: 14.5, weight: .semibold))
-                .foregroundStyle(Theme.bg)
+                .foregroundStyle(Color.white)
                 .frame(maxWidth: .infinity)
                 .frame(height: 48)
                 .background(
                     RoundedRectangle(cornerRadius: AppRadius.item, style: .continuous)
-                        .fill(Theme.text)
+                        .fill(Theme.brand)
                 )
         }
         .buttonStyle(PressableStyle())

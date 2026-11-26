@@ -37,9 +37,12 @@ struct TimetableView: View {
     @State private var rowHeight: CGFloat = 46
     /// 捏合开始时锁定的行高；手势进行中不随 rowHeight 漂移
     @State private var pinchBase: CGFloat?
+    @State private var now = Date()
+    @Environment(\.scenePhase) private var scenePhase
+    private let liveTicker = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
 
     private var settings: TimetableSettings? { settingsList.first }
-    private var currentWeek: Int { week ?? settings?.weekNumber() ?? 1 }
+    private var currentWeek: Int { week ?? settings?.weekNumber(for: now) ?? 1 }
     private var periodCount: Int { max(settings?.periodCount ?? 12, 8) }
 
     var body: some View {
@@ -57,6 +60,13 @@ struct TimetableView: View {
             }
             .padding(.horizontal, Theme.screenPadding)
             .padding(.bottom, Theme.bottomScrollInset)
+        }
+        .onReceive(liveTicker) { _ in
+            guard scenePhase == .active else { return }
+            now = Date()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { now = Date() }
         }
         .simultaneousGesture(zoomGesture)
         .floatingAddButton("添加课程") {
@@ -171,29 +181,35 @@ struct TimetableView: View {
             ForEach(1...7, id: \.self) { day in
                 let count = slots(on: day).count
                 let isSelected = selectedWeekday == day
-                let isToday = day == TimetableMath.todayWeekday && currentWeek == (settings?.weekNumber() ?? 1)
+                let isToday = day == TimetableMath.todayWeekday && currentWeek == (settings?.weekNumber(for: now) ?? 1)
 
                 Button {
                     withAnimation(.snappy(duration: 0.18)) { selectedWeekday = day }
                 } label: {
                     VStack(spacing: 5) {
                         Text(TimetableMath.weekdayName(day))
-                            .font(.system(size: 11.5, weight: .medium))
-                            .foregroundStyle(isSelected ? Theme.text : Theme.textSecondary)
+                            .font(.system(size: 11.5, weight: isSelected ? .semibold : .medium))
+                            .foregroundStyle(isSelected ? Theme.brand : Theme.textSecondary)
                         Text("\(count)")
-                            .font(.system(size: 19, weight: .medium))
+                            .font(.system(size: 19, weight: isSelected ? .semibold : .medium))
                             .monospacedDigit()
-                            .foregroundStyle(count == 0 ? Theme.textTertiary : Theme.text)
+                            .foregroundStyle(isSelected ? Theme.brand : (count == 0 ? Theme.textTertiary : Theme.text))
                         Circle()
-                            .fill(isToday ? Theme.text : Color.clear)
+                            .fill(isToday ? Theme.brand : Color.clear)
                             .frame(width: 4, height: 4)
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 9)
-                    .background(
-                        RoundedRectangle(cornerRadius: AppRadius.item, style: .continuous)
-                            .fill(isSelected ? Theme.text.opacity(0.12) : Theme.surface)
+                    .cardElevation(
+                        radius: AppRadius.item,
+                        fill: isSelected ? Theme.brandSoft : Theme.surface
                     )
+                    .overlay {
+                        if isSelected {
+                            RoundedRectangle(cornerRadius: AppRadius.item, style: .continuous)
+                                .strokeBorder(Theme.brand.opacity(0.32), lineWidth: 0.8)
+                        }
+                    }
                 }
                 .buttonStyle(.plain)
             }
@@ -204,6 +220,15 @@ struct TimetableView: View {
 
     private var dayList: some View {
         let items = slots(on: selectedWeekday)
+        let isViewingToday = selectedWeekday == TimetableMath.todayWeekday
+            && currentWeek == (settings?.weekNumber(for: now) ?? 1)
+        let nextUpcomingID: UUID? = isViewingToday ? items.first(where: {
+            if case .upcoming = TimetableLiveMath.status(for: $0.slot, isToday: true, settings: settings, now: now) {
+                return true
+            }
+            return false
+        })?.slot.id : nil
+
         return VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline, spacing: 7) {
                 Text(TimetableMath.weekdayName(selectedWeekday))
@@ -228,44 +253,135 @@ struct TimetableView: View {
                     .foregroundStyle(Theme.textTertiary)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 36)
-                    .background(
-                        RoundedRectangle(cornerRadius: AppRadius.item, style: .continuous)
-                            .fill(Theme.surface)
-                    )
+                    .cardElevation(radius: AppRadius.item)
             } else {
                 ForEach(items, id: \.slot.id) { item in
-                    courseRow(item.course, item.slot)
-                        .padding(.bottom, 8)
+                    let live = TimetableLiveMath.status(
+                        for: item.slot,
+                        isToday: isViewingToday,
+                        settings: settings,
+                        now: now
+                    )
+                    courseRow(
+                        item.course,
+                        item.slot,
+                        liveStatus: live,
+                        isNextUpcoming: item.slot.id == nextUpcomingID
+                    )
+                    .padding(.bottom, 8)
                 }
             }
         }
     }
 
-    private func courseRow(_ course: Course, _ slot: CourseSlot) -> some View {
+    private func courseRow(
+        _ course: Course,
+        _ slot: CourseSlot,
+        liveStatus: CourseLiveStatus?,
+        isNextUpcoming: Bool
+    ) -> some View {
         let tone = Theme.courseTone(course.shade)
+        let isOngoing: Bool = {
+            if case .ongoing = liveStatus { return true }
+            return false
+        }()
+        let isEnded = liveStatus == .ended
+        let isHighlighted = isOngoing || isNextUpcoming
+
         return Button {
             edit(course, slot)
         } label: {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(course.name)
-                    .font(.system(size: 14.5, weight: .semibold))
-                    .foregroundStyle(tone.fg)
-                Text("\(slot.startPeriod)-\(slot.endPeriod) 节 · \(timeText(slot))")
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(tone.fg.opacity(0.75))
-                Text(metaText(course, slot))
-                    .font(.system(size: 11))
-                    .foregroundStyle(tone.fg.opacity(0.55))
+            HStack(spacing: 0) {
+                if isHighlighted {
+                    RoundedRectangle(cornerRadius: 2, style: .continuous)
+                        .fill(tone.fg)
+                        .frame(width: 3.5)
+                        .padding(.vertical, 10)
+                        .padding(.leading, 8)
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(alignment: .center, spacing: 8) {
+                        Text(course.name)
+                            .font(.system(size: 14.5, weight: .semibold))
+                            .foregroundStyle(tone.fg)
+                            .lineLimit(1)
+
+                        Spacer(minLength: 4)
+
+                        if let badge = statusBadgeText(liveStatus, isNextUpcoming: isNextUpcoming) {
+                            Text(badge)
+                                .font(.system(size: 10.5, weight: .medium))
+                                .monospacedDigit()
+                                .foregroundStyle(isOngoing ? Color.white : tone.fg)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(
+                                    Capsule().fill(isOngoing ? tone.fg : tone.fg.opacity(0.14))
+                                )
+                        }
+                    }
+
+                    Text("\(slot.startPeriod)-\(slot.endPeriod) 节 · \(timeText(slot))")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(tone.fg.opacity(0.78))
+
+                    Text(metaText(course, slot))
+                        .font(.system(size: 11))
+                        .foregroundStyle(tone.fg.opacity(0.60))
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.leading, isHighlighted ? 10 : 15)
+                .padding(.trailing, 15)
+                .padding(.vertical, 13)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 15)
-            .padding(.vertical, 13)
             .background(
-                RoundedRectangle(cornerRadius: AppRadius.item, style: .continuous)
-                    .fill(tone.bg)
+                ZStack {
+                    RoundedRectangle(cornerRadius: AppRadius.item, style: .continuous)
+                        .fill(
+                            isHighlighted
+                                ? LinearGradient(
+                                    colors: [tone.bg, tone.bg.opacity(0.78)],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                                : LinearGradient(
+                                    colors: [tone.bg, tone.bg],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                        )
+                    RoundedRectangle(cornerRadius: AppRadius.item, style: .continuous)
+                        .strokeBorder(
+                            isOngoing ? tone.fg.opacity(0.32) : Color.white.opacity(0.35),
+                            lineWidth: isOngoing ? 1 : 0.5
+                        )
+                }
             )
+            .shadow(
+                color: Color.black.opacity(isHighlighted ? 0.06 : 0.03),
+                radius: isHighlighted ? 10 : 6,
+                y: 3
+            )
+            .opacity(isEnded ? 0.50 : 1)
         }
         .buttonStyle(.plain)
+    }
+
+    private func statusBadgeText(_ status: CourseLiveStatus?, isNextUpcoming: Bool) -> String? {
+        guard let status else { return nil }
+        switch status {
+        case .ongoing(_, let remaining):
+            return "正在上 · 剩 \(remaining)m"
+        case .upcoming(let minutes):
+            guard isNextUpcoming else { return nil }
+            if minutes < 60 { return "\(minutes) 分钟后" }
+            let h = minutes / 60
+            let m = minutes % 60
+            return m == 0 ? "\(h) 小时后" : "\(h)h\(m)m 后"
+        case .ended:
+            return "已结束"
+        }
     }
 
     // MARK: 网格
@@ -282,10 +398,7 @@ struct TimetableView: View {
                 .padding(.bottom, 2)
         }
         .padding(8)
-        .background(
-            RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous)
-                .fill(Theme.surface)
-        )
+        .cardElevation(radius: AppRadius.card)
     }
 
     private var dayHeader: some View {
@@ -296,17 +409,17 @@ struct TimetableView: View {
                 .frame(width: 34, alignment: .leading)
 
             ForEach(1...7, id: \.self) { day in
-                let isToday = day == TimetableMath.todayWeekday && currentWeek == (settings?.weekNumber() ?? 1)
+                let isToday = day == TimetableMath.todayWeekday && currentWeek == (settings?.weekNumber(for: now) ?? 1)
                 VStack(spacing: 3) {
                     Text(TimetableMath.weekdayName(day))
                         .font(.system(size: 12, weight: isToday ? .semibold : .regular))
-                        .foregroundStyle(isToday ? Theme.text : Theme.textSecondary)
+                        .foregroundStyle(isToday ? Theme.brand : Theme.textSecondary)
                     Text(TimetableMath.dayNumber(day, week: currentWeek, settings: settings))
-                        .font(.system(size: 11))
-                        .foregroundStyle(isToday ? Theme.bg : Theme.textTertiary)
+                        .font(.system(size: 11, weight: isToday ? .semibold : .regular))
+                        .foregroundStyle(isToday ? Color.white : Theme.textTertiary)
                         .frame(width: 24, height: 24)
                         .background(
-                            Circle().fill(isToday ? Theme.text : Color.clear)
+                            Circle().fill(isToday ? Theme.brand : Color.clear)
                         )
                 }
                 .frame(maxWidth: .infinity)
@@ -362,9 +475,23 @@ struct TimetableView: View {
     }
 
     private func blocks(columnWidth: CGFloat) -> some View {
-        ForEach(activeSlots, id: \.slot.id) { item in
+        let isCurrentWeek = currentWeek == (settings?.weekNumber(for: now) ?? 1)
+        let today = TimetableMath.todayWeekday
+
+        return ForEach(activeSlots, id: \.slot.id) { item in
             let tone = Theme.courseTone(item.course.shade)
             let height = CGFloat(item.slot.periodSpan) * rowHeight - 4
+            let live = TimetableLiveMath.status(
+                for: item.slot,
+                isToday: isCurrentWeek && item.slot.weekday == today,
+                settings: settings,
+                now: now
+            )
+            let isOngoing: Bool = {
+                if case .ongoing = live { return true }
+                return false
+            }()
+            let isEnded = live == .ended
 
             Button {
                 edit(item.course, item.slot)
@@ -389,6 +516,13 @@ struct TimetableView: View {
                     RoundedRectangle(cornerRadius: AppRadius.grid, style: .continuous)
                         .fill(tone.bg)
                 )
+                .overlay {
+                    if isOngoing {
+                        RoundedRectangle(cornerRadius: AppRadius.grid, style: .continuous)
+                            .strokeBorder(tone.fg, lineWidth: 1.5)
+                    }
+                }
+                .opacity(isEnded ? 0.52 : 1)
             }
             .buttonStyle(.plain)
             .offset(

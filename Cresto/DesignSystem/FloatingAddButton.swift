@@ -15,10 +15,10 @@ struct FloatingActionButton: View {
     var body: some View {
         Button(action: action) {
             ReiconIcon(icon: .add, size: 24)
-                .foregroundStyle(Theme.bg)
+                .foregroundStyle(Color.white)
                 .frame(width: FloatingAnchor.size, height: FloatingAnchor.size)
-                .background(Circle().fill(Theme.text))
-                .shadow(color: .black.opacity(0.22), radius: 14, y: 6)
+                .background(Circle().fill(Theme.brand))
+                .shadow(color: Theme.brand.opacity(0.30), radius: 14, y: 6)
         }
         .buttonStyle(PressableStyle())
         .accessibilityLabel(accessibilityLabel)

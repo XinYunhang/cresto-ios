@@ -144,7 +144,10 @@ struct ReadingCardView: View {
             .overlay {
                 if selectedKey == day.id {
                     RoundedRectangle(cornerRadius: AppRadius.grid, style: .continuous)
-                        .strokeBorder(Theme.text, lineWidth: 2)
+                        .strokeBorder(WeReadHeat.green, lineWidth: 2)
+                } else if day.level == 0 {
+                    RoundedRectangle(cornerRadius: AppRadius.grid, style: .continuous)
+                        .strokeBorder(Theme.stroke, lineWidth: 0.5)
                 }
             }
             .contentShape(Rectangle())

@@ -34,6 +34,8 @@ struct RootView: View {
                 if isMounted(.overview) {
                     OverviewView(
                         onOpenTasks: { tab = .tasks },
+                        onOpenCourse: { tab = .course },
+                        onOpenSubscriptions: { tab = .ledger },
                         onAddTask: { isQuickAddPresented = true },
                         onOpenSettings: { isSettingsPresented = true }
                     )

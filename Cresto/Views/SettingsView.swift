@@ -415,7 +415,7 @@ struct SettingsView: View {
                 .frame(height: 46)
                 .background(
                     RoundedRectangle(cornerRadius: AppRadius.item, style: .continuous)
-                        .fill(Color.white.opacity(0.05))
+                        .fill(Theme.surfaceRaised)
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: AppRadius.item, style: .continuous)
@@ -477,6 +477,6 @@ struct SettingsView: View {
     }
 
     private var divider: some View {
-        Rectangle().fill(Color.white.opacity(0.05)).frame(height: 1)
+        Rectangle().fill(Theme.stroke).frame(height: 1)
     }
 }

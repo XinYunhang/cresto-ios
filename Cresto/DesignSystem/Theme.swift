@@ -2,19 +2,25 @@ import SwiftUI
 import UIKit
 
 /// 材质分两层：
-/// · 内容 = 实心磨砂块（无描边，靠明度分层）
+/// · 内容 = 物理质感实心卡（浅色白玉瓷片浮于高级灰底 / 深色炭黑磨砂与顶部微亮高光，配柔和弥散阴影）
 /// · 玻璃 = 只给底栏和顶部圆钮
 /// 颜色全部是动态色，跟着系统/手动主题走，不需要在每个视图里判断深浅。
 enum Theme {
-    static let bg = dynamic(dark: 0x000000, light: 0xFFFFFF)
-    static let surface = dynamic(dark: 0x151517, light: 0xF2F2F5)
-    static let surfaceRaised = dynamic(dark: 0x1D1D20, light: 0xE9E9EE)
+    static let bg = dynamic(dark: 0x0E1015, light: 0xF2F3F7)
+    static let surface = dynamic(dark: 0x171A22, light: 0xFFFFFF)
+    static let surfaceRaised = dynamic(dark: 0x222633, light: 0xECEEF3)
+    /// 未点亮暗槽（热力图空格 / 进度条轨道）
+    static let surfaceWell = dynamic(dark: 0x11131A, light: 0xE5E8F0)
 
-    static let text = dynamic(dark: 0xFAFAFA, light: 0x0A0A0A)
-    static let textSecondary = dynamic(dark: 0x9C9CA4, light: 0x6D6D76)
-    static let textTertiary = dynamic(dark: 0x5F5F67, light: 0xA2A2AA)
+    static let text = dynamic(dark: 0xF7F8FA, light: 0x111318)
+    static let textSecondary = dynamic(dark: 0x9CA3B2, light: 0x5E6472)
+    static let textTertiary = dynamic(dark: 0x676E7E, light: 0x969DA9)
 
-    static let accent = text
+    /// 全局主强调色：沉稳靛蓝 / 钴蓝
+    static let brand = dynamic(dark: 0x6B8AFF, light: 0x3B5BDB)
+    static let brandSoft = dynamic(dark: 0x1E2640, light: 0xEBF0FF)
+
+    static let accent = brand
     static let ink = text
     static let online = text
     static let mint = textSecondary
@@ -22,9 +28,12 @@ enum Theme {
     /// DeepSeek 消耗热力色：谷价同族的低饱和青绿（用户拍板），热力格与图例共用
     static let costHeat = dynamic(dark: 0x7FD6BC, light: 0x2E6E5E)
 
+    /// 复选框未完成描边（浅色深色自适应）
+    static let checkboxBorder = dynamicLine(dark: 0.28, light: 0.22)
+
     /// 只用在列表内部的分隔线，不包边
-    static let stroke = line
-    static let strokeStrong = dynamicLine(dark: 0.10, light: 0.09)
+    static let stroke = dynamicLine(dark: 0.08, light: 0.07)
+    static let strokeStrong = dynamicLine(dark: 0.12, light: 0.11)
 
     static let screenPadding: CGFloat = 18
     static let cardGap: CGFloat = 10
@@ -91,18 +100,55 @@ extension Color {
 
 // MARK: - 卡片
 
+private struct CardElevationModifier: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
+    var radius: CGFloat
+    var fill: Color
+
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+        content
+            .background(shape.fill(fill))
+            .overlay(
+                Group {
+                    if colorScheme == .dark {
+                        shape.strokeBorder(
+                            LinearGradient(
+                                colors: [Color.white.opacity(0.11), Color.white.opacity(0.02)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            ),
+                            lineWidth: 0.6
+                        )
+                    } else {
+                        shape.strokeBorder(Color.white.opacity(0.9), lineWidth: 0.5)
+                    }
+                }
+            )
+            .shadow(
+                color: Color.black.opacity(colorScheme == .dark ? 0.28 : 0.045),
+                radius: colorScheme == .dark ? 10 : 12,
+                x: 0,
+                y: 4
+            )
+    }
+}
+
 private struct CardSurface: ViewModifier {
     var padding: CGFloat
 
     func body(content: Content) -> some View {
-        let shape = RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous)
         content
             .padding(padding)
-            .background(shape.fill(Theme.surface))
+            .cardElevation(radius: AppRadius.card)
     }
 }
 
 extension View {
+    func cardElevation(radius: CGFloat = AppRadius.card, fill: Color = Theme.surface) -> some View {
+        modifier(CardElevationModifier(radius: radius, fill: fill))
+    }
+
     func cardSurface(padding: CGFloat = 15) -> some View {
         modifier(CardSurface(padding: padding))
     }
@@ -193,29 +239,29 @@ struct CourseTone {
 }
 
 extension Theme {
-    /// 九套低饱和配色，深浅主题各一版。按课程稳定分配。
+    /// 九套低饱和高级莫兰迪配色，深浅主题各一版。按课程稳定分配。
     private static let lightTones: [(UInt32, UInt32)] = [
-        (0xE6E7C8, 0x62663A),
-        (0xF7E3C6, 0x7C5A2B),
-        (0xDCEBDB, 0x4C6A49),
-        (0xE3D9F3, 0x5A4880),
-        (0xF8E7E1, 0x8A5A50),
-        (0xD9E3F0, 0x3F5776),
-        (0xD5E6E7, 0x3B5C60),
-        (0xEBDFEA, 0x6A4F68),
-        (0xF1E9D9, 0x6B5C45)
+        (0xECEFD4, 0x555B2E),
+        (0xFAECD6, 0x7A5422),
+        (0xDFEFE3, 0x386646),
+        (0xEAE2F8, 0x564182),
+        (0xFAE8E4, 0x8A4B43),
+        (0xE0EAF8, 0x335580),
+        (0xDCF0F2, 0x2F5E64),
+        (0xF2E4F0, 0x6D4668),
+        (0xF5EDE0, 0x6A573B)
     ]
 
     private static let darkTones: [(UInt32, UInt32)] = [
-        (0x4A4B33, 0xE6E7C8),
-        (0x5A4A30, 0xF7E3C6),
-        (0x3F4A3E, 0xDCEBDB),
-        (0x4A4058, 0xE3D9F3),
-        (0x5A4340, 0xF8E7E1),
-        (0x3E4756, 0xD9E3F0),
-        (0x3A4A4B, 0xD5E6E7),
-        (0x4E4050, 0xEBDFEA),
-        (0x4A463A, 0xF1E9D9)
+        (0x464830, 0xECEFD4),
+        (0x57462C, 0xFAECD6),
+        (0x36493B, 0xDFEFE3),
+        (0x463B59, 0xEAE2F8),
+        (0x583E3B, 0xFAE8E4),
+        (0x364357, 0xE0EAF8),
+        (0x33494B, 0xDCF0F2),
+        (0x4E3C4D, 0xF2E4F0),
+        (0x4A4336, 0xF5EDE0)
     ]
 
     static func courseTone(_ index: Int) -> CourseTone {

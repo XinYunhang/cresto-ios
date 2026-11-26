@@ -147,18 +147,18 @@ struct WeReadDigest {
     }
 }
 
-// MARK: - 热力配色（5 档：灰 + 翠绿 4 阶）
+// MARK: - 热力配色（5 档：未点亮暗槽 + 翠绿 4 阶梯度）
 
 enum WeReadHeat {
-    static let green = Color(hex: 0x34C759)
+    static let green = Color(hex: 0x2FB356)
 
     static func color(level: Int) -> Color {
         switch level {
-        case 0: return Theme.surfaceRaised                 // 无阅读：浅灰
-        case 1: return green.opacity(0.22)
-        case 2: return green.opacity(0.40)
-        case 3: return green.opacity(0.62)
-        default: return green.opacity(0.88)
+        case 0: return Theme.surfaceWell                 // 未点亮暗槽
+        case 1: return green.opacity(0.24)
+        case 2: return green.opacity(0.46)
+        case 3: return green.opacity(0.70)
+        default: return green.opacity(0.95)
         }
     }
 }

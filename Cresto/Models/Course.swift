@@ -101,8 +101,27 @@ final class TimetableSettings {
         periodStartsRaw.split(separator: ",").compactMap { Int($0) }
     }
 
+    func startMinutes(ofPeriod period: Int) -> Int {
+        let starts = periodStarts
+        if starts.indices.contains(period - 1) {
+            return starts[period - 1]
+        }
+        if let last = starts.last, period > starts.count {
+            return last + (period - starts.count) * 55
+        }
+        return 480
+    }
+
+    func endMinutes(ofPeriod period: Int) -> Int {
+        let starts = periodStarts
+        if starts.indices.contains(period) {
+            return starts[period] - 5
+        }
+        return startMinutes(ofPeriod: period) + 45
+    }
+
     func startTime(ofPeriod period: Int) -> DateComponents {
-        let minutes = periodStarts.indices.contains(period - 1) ? periodStarts[period - 1] : 480
+        let minutes = startMinutes(ofPeriod: period)
         return DateComponents(hour: minutes / 60, minute: minutes % 60)
     }
 
@@ -112,10 +131,7 @@ final class TimetableSettings {
     }
 
     func endText(ofPeriod period: Int) -> String {
-        let starts = periodStarts
-        guard starts.indices.contains(period) else { return startText(ofPeriod: period) }
-        // 下一节开始前 5 分钟算这节结束
-        let end = starts[period] - 5
+        let end = endMinutes(ofPeriod: period)
         return String(format: "%02d:%02d", end / 60, end % 60)
     }
 
@@ -132,5 +148,136 @@ final class TimetableSettings {
     func monday(ofWeek week: Int) -> Date {
         let calendar = Calendar.current
         return calendar.date(byAdding: .day, value: (week - 1) * 7, to: calendar.startOfDay(for: termStart)) ?? termStart
+    }
+}
+
+// MARK: - 实时课程状态计算（纯算法，不改持久化 Schema）
+
+enum CourseLiveStatus: Equatable {
+    case ongoing(progress: Double, remainingMinutes: Int)
+    case upcoming(minutesUntil: Int)
+    case ended
+}
+
+struct CourseFocus {
+    let course: Course
+    let slot: CourseSlot
+    let status: CourseLiveStatus
+    let isToday: Bool
+    let dayLabel: String
+    let timeRangeText: String
+    let locationText: String
+}
+
+enum TimetableLiveMath {
+    static func status(
+        for slot: CourseSlot,
+        isToday: Bool,
+        settings: TimetableSettings?,
+        now: Date = Date()
+    ) -> CourseLiveStatus? {
+        guard isToday, let settings else { return nil }
+        let comps = Calendar.current.dateComponents([.hour, .minute], from: now)
+        let nowMinutes = (comps.hour ?? 0) * 60 + (comps.minute ?? 0)
+        let startMin = settings.startMinutes(ofPeriod: slot.startPeriod)
+        let endMin = max(startMin + 1, settings.endMinutes(ofPeriod: slot.endPeriod))
+
+        if nowMinutes < startMin {
+            return .upcoming(minutesUntil: startMin - nowMinutes)
+        } else if nowMinutes < endMin {
+            let progress = min(1, max(0, Double(nowMinutes - startMin) / Double(endMin - startMin)))
+            return .ongoing(progress: progress, remainingMinutes: max(1, endMin - nowMinutes))
+        } else {
+            return .ended
+        }
+    }
+
+    static func focusCourse(
+        courses: [Course],
+        settings: TimetableSettings?,
+        now: Date = Date()
+    ) -> CourseFocus? {
+        let calendar = Calendar.current
+        let effectiveSettings = settings ?? TimetableSettings()
+        let currentWeek = effectiveSettings.weekNumber(for: now)
+        let weekdayComponent = calendar.component(.weekday, from: now)
+        let todayWeekday = ((weekdayComponent + 5) % 7) + 1
+
+        let todaySlots = activeSlots(in: courses, week: currentWeek, weekday: todayWeekday)
+
+        // 1. 优先找正在进行的课程
+        for item in todaySlots {
+            if let st = status(for: item.slot, isToday: true, settings: effectiveSettings, now: now),
+               case .ongoing = st {
+                return makeFocus(item.course, item.slot, status: st, isToday: true, dayLabel: "今天", settings: effectiveSettings)
+            }
+        }
+
+        // 2. 其次找今天最近一节即将开始的课程
+        for item in todaySlots {
+            if let st = status(for: item.slot, isToday: true, settings: effectiveSettings, now: now),
+               case .upcoming = st {
+                return makeFocus(item.course, item.slot, status: st, isToday: true, dayLabel: "今天", settings: effectiveSettings)
+            }
+        }
+
+        // 3. 今天已全部结束或无课：看明天的第一节
+        if let tomorrow = calendar.date(byAdding: .day, value: 1, to: now) {
+            let tomorrowWeek = effectiveSettings.weekNumber(for: tomorrow)
+            let tomorrowWeekday = (todayWeekday % 7) + 1
+            if let first = activeSlots(in: courses, week: tomorrowWeek, weekday: tomorrowWeekday).first {
+                let comps = calendar.dateComponents([.hour, .minute], from: now)
+                let nowMin = (comps.hour ?? 0) * 60 + (comps.minute ?? 0)
+                let startMin = effectiveSettings.startMinutes(ofPeriod: first.slot.startPeriod)
+                let minutesUntil = max(1, (24 * 60 - nowMin) + startMin)
+                return makeFocus(
+                    first.course,
+                    first.slot,
+                    status: .upcoming(minutesUntil: minutesUntil),
+                    isToday: false,
+                    dayLabel: "明天",
+                    settings: effectiveSettings
+                )
+            }
+        }
+
+        return nil
+    }
+
+    private static func activeSlots(
+        in courses: [Course],
+        week: Int,
+        weekday: Int
+    ) -> [(course: Course, slot: CourseSlot)] {
+        var result: [(course: Course, slot: CourseSlot)] = []
+        for course in courses {
+            for slot in course.slots where slot.weekday == weekday && slot.isActive(inWeek: week) {
+                result.append((course, slot))
+            }
+        }
+        result.sort { $0.slot.startPeriod < $1.slot.startPeriod }
+        return result
+    }
+
+    private static func makeFocus(
+        _ course: Course,
+        _ slot: CourseSlot,
+        status: CourseLiveStatus,
+        isToday: Bool,
+        dayLabel: String,
+        settings: TimetableSettings
+    ) -> CourseFocus {
+        let rawLocation = slot.location.isEmpty ? course.location : slot.location
+        let locationText = rawLocation.trimmingCharacters(in: .whitespacesAndNewlines)
+        let timeRange = "\(settings.startText(ofPeriod: slot.startPeriod))-\(settings.endText(ofPeriod: slot.endPeriod))"
+        return CourseFocus(
+            course: course,
+            slot: slot,
+            status: status,
+            isToday: isToday,
+            dayLabel: dayLabel,
+            timeRangeText: timeRange,
+            locationText: locationText.isEmpty ? "教室待定" : locationText
+        )
     }
 }

@@ -202,10 +202,10 @@ struct TodayProgressRing: View {
     var body: some View {
         ZStack {
             Circle()
-                .stroke(Color.primary.opacity(0.12), lineWidth: 3.25)
+                .stroke(Theme.brand.opacity(0.14), lineWidth: 3.25)
             Circle()
                 .trim(from: 0, to: progress)
-                .stroke(Theme.text, style: StrokeStyle(lineWidth: 3.25, lineCap: .round))
+                .stroke(Theme.brand, style: StrokeStyle(lineWidth: 3.25, lineCap: .round))
                 .rotationEffect(.degrees(-90))
                 .animation(.spring, value: progress)
         }
@@ -319,16 +319,12 @@ private struct SwipeableTaskRow: View {
             TaskRowView(task: task, expandedMetaID: $expandedMetaID, onTap: onTap)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 12)
-                .background(
-                    RoundedRectangle(cornerRadius: AppRadius.item, style: .continuous)
-                        .fill(Theme.surface)
-                )
+                .cardElevation(radius: AppRadius.item)
                 .contentShape(RoundedRectangle(cornerRadius: AppRadius.item, style: .continuous))
                 .offset(x: offset)
                 .gesture(dragGesture)
         }
         .frame(maxWidth: .infinity)
-        .clipped()
         .animation(dragging ? nil : .spring(response: 0.3, dampingFraction: 0.85), value: offset)
         .onChange(of: isSwiped) { _, swiped in
             if !swiped { dragTranslation = 0 }
@@ -397,11 +393,11 @@ struct TaskRowView: View {
             } label: {
                 ZStack {
                     Circle()
-                        .strokeBorder(task.isCompleted ? Color.clear : Color.white.opacity(0.26), lineWidth: 1.5)
+                        .strokeBorder(task.isCompleted ? Color.clear : Theme.checkboxBorder, lineWidth: 1.5)
                     if task.isCompleted {
-                        Circle().fill(Theme.ink)
+                        Circle().fill(Theme.brand)
                         ReiconIcon(icon: .check, size: 12)
-                            .foregroundStyle(Theme.bg)
+                            .foregroundStyle(Color.white)
                     }
                 }
                 .frame(width: 19, height: 19)

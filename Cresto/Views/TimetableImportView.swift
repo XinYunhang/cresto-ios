@@ -115,7 +115,7 @@ struct TimetableImportView: View {
             ForEach($courses) { $course in
                 row($course)
                 if course.id != courses.last?.id {
-                    Rectangle().fill(Color.white.opacity(0.05)).frame(height: 1)
+                    Rectangle().fill(Theme.stroke).frame(height: 1)
                 }
             }
         }
@@ -129,11 +129,11 @@ struct TimetableImportView: View {
             } label: {
                 ZStack {
                     Circle()
-                        .strokeBorder(course.wrappedValue.isIncluded ? Color.clear : Color.white.opacity(0.26), lineWidth: 1.5)
+                        .strokeBorder(course.wrappedValue.isIncluded ? Color.clear : Theme.checkboxBorder, lineWidth: 1.5)
                     if course.wrappedValue.isIncluded {
-                        Circle().fill(Theme.ink)
+                        Circle().fill(Theme.brand)
                         ReiconIcon(icon: .check, size: 10)
-                            .foregroundStyle(Theme.bg)
+                            .foregroundStyle(Color.white)
                     }
                 }
                 .frame(width: 19, height: 19)
@@ -187,7 +187,7 @@ struct TimetableImportView: View {
             .foregroundStyle(Theme.textSecondary)
             .padding(.horizontal, 9)
             .padding(.vertical, 4)
-            .background(Capsule().fill(Color.white.opacity(0.05)))
+            .background(Capsule().fill(Theme.surfaceRaised))
             .overlay(Capsule().strokeBorder(Theme.stroke, lineWidth: 1))
     }
 

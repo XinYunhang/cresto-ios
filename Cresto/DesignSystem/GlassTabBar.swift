@@ -4,6 +4,7 @@ import UIKit
 /// 底栏：系统 `UISegmentedControl` 承载，iOS 26 的液态玻璃镜片由系统绘制。
 /// 高度通过子类化 `intrinsicContentSize` 抬到 58pt，图标同步加大。
 struct GlassTabBar: View {
+    @Environment(\.colorScheme) private var colorScheme
     @Binding var selection: AppTab
 
     var body: some View {
@@ -11,6 +12,18 @@ struct GlassTabBar: View {
             // 实心底板：内容不再透过底栏（系统镜片只在本板之上做镜面/高光）
             Capsule(style: .continuous)
                 .fill(Theme.surface)
+                .overlay(
+                    Capsule(style: .continuous)
+                        .strokeBorder(
+                            colorScheme == .dark ? Color.white.opacity(0.09) : Color.white.opacity(0.9),
+                            lineWidth: 0.5
+                        )
+                )
+                .shadow(
+                    color: Color.black.opacity(colorScheme == .dark ? 0.30 : 0.06),
+                    radius: 12,
+                    y: 4
+                )
 
             SegmentedTabBar(selection: $selection)
         }
