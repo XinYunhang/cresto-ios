@@ -12,6 +12,7 @@ struct RootView: View {
     @State private var mountedTabs: Set<AppTab> = [.overview]
     @State private var isQuickAddPresented = false
     @State private var isSettingsPresented = false
+    @State private var showSplash = true
     @State private var activeSince: Date?
     @State private var lastDeepSeekPoll: Date?
 
@@ -78,6 +79,13 @@ struct RootView: View {
             .allowsHitTesting(false)
 
             GlassTabBar(selection: $tab)
+
+            if showSplash {
+                SplashOverlayView {
+                    showSplash = false
+                }
+                .zIndex(99)
+            }
         }
         .preferredColorScheme(colorScheme)
         .onChange(of: tab) { _, newTab in
