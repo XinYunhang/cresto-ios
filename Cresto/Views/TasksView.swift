@@ -702,7 +702,8 @@ private struct MetaUrgencyChip: View {
             }
         }
         .padding(.horizontal, isExpanded ? 9 : 0)
-        .frame(minWidth: 26, height: 26)
+        .frame(minWidth: 26)
+        .frame(height: 26)
         .background(
             Capsule().fill(tier.tint.opacity(isExpanded ? 0.14 : 0.18))
         )
