@@ -8,27 +8,23 @@ private struct SubscriptionEditorContext: Identifiable {
     let preset: SubscriptionPreset?
 }
 
-/// 订阅管理主视图（第 4 Tab）。
-/// 架构：整页封装为 `SubscriptionMainView`，顶部标题区预留给后续「流水 | 订阅」双分段。
+/// 订阅管理主视图（第 4 Tab · 方案 A Bento 双核 + 无框横向列表）。
+/// · 无分类筛选、无列表框线，主页面零汇率/折算杂项（USD/JPY 折算仅在详情/添加页显示）
+/// · 点击右上角液态玻璃日历圆钮，自动展开存在最近还款的当月，支持切月、重点高亮与点日仅展示图标
 struct SubscriptionMainView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \Subscription.createdAt) private var subscriptions: [Subscription]
 
     @AppStorage("usdToCny") private var usdToCny = 7.25
-    @AppStorage("subscriptionShowCNY") private var showCNY = true
+    @AppStorage("jpyToCny") private var jpyToCny = 0.048
 
-    @State private var filter: SubscriptionFilter = .all
+    @State private var isCalendarOpen = false
     @State private var displayMonth = Calendar.current.date(
         from: Calendar.current.dateComponents([.year, .month], from: Date())
     ) ?? Date()
     @State private var selectedDate: Date?
-    @State private var calendarCollapsed = true
     @State private var swipedID: UUID?
-
     @State private var editorContext: SubscriptionEditorContext?
-
-    @State private var isRateAlertPresented = false
-    @State private var rateDraft = ""
 
     private var calendar: Calendar {
         var c = Calendar.current
@@ -36,12 +32,23 @@ struct SubscriptionMainView: View {
         return c
     }
 
+    private var sortedSubscriptions: [Subscription] {
+        Subscription.sortedForDisplay(subscriptions)
+    }
+
+    private var nextActiveSubscription: Subscription? {
+        sortedSubscriptions.first { !$0.isPaused }
+    }
+
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(spacing: Theme.cardGap) {
                 header
-                filterBar
-                summaryCalendarCard
+                if isCalendarOpen {
+                    calendarDrawer
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+                bentoTop
                 subscriptionList
             }
             .padding(.horizontal, Theme.screenPadding)
@@ -59,21 +66,9 @@ struct SubscriptionMainView: View {
         .sheet(item: $editorContext) { ctx in
             SubscriptionEditor(subscription: ctx.subscription, initialPreset: ctx.preset)
         }
-        .alert("USD → CNY 参考汇率", isPresented: $isRateAlertPresented) {
-            TextField("7.25", text: $rateDraft)
-                .keyboardType(.decimalPad)
-            Button("保存") {
-                if let value = Double(rateDraft.replacingOccurrences(of: ",", with: ".")), value > 0 {
-                    usdToCny = value
-                }
-            }
-            Button("取消", role: .cancel) {}
-        } message: {
-            Text("当前汇率 1 USD = \(String(format: "%.2f", usdToCny)) CNY")
-        }
     }
 
-    // MARK: 顶部
+    // MARK: 顶部（标准左标题 + 右液态玻璃日历圆钮）
 
     private var header: some View {
         HStack(alignment: .center) {
@@ -82,268 +77,120 @@ struct SubscriptionMainView: View {
                 .foregroundStyle(Theme.text)
                 .tracking(-0.5)
             Spacer()
-            Menu {
-                Button {
-                    showCNY = true
-                } label: {
-                    Text(showCNY ? "✓ 显示人民币折算" : "显示人民币折算")
-                }
-                Button {
-                    showCNY = false
-                } label: {
-                    Text(showCNY ? "显示原币种" : "✓ 显示原币种")
-                }
-                Button {
-                    rateDraft = String(format: "%.2f", usdToCny)
-                    isRateAlertPresented = true
-                } label: {
-                    Text("设置汇率（1 USD = \(String(format: "%.2f", usdToCny)) CNY）")
+            Button {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                withAnimation(.snappy(duration: 0.25)) {
+                    if !isCalendarOpen {
+                        jumpToNearestChargeMonth()
+                    }
+                    isCalendarOpen.toggle()
                 }
             } label: {
-                HStack(spacing: 4) {
-                    Text("CNY 折算")
-                        .font(.system(size: 11.5))
-                        .foregroundStyle(Theme.textSecondary)
-                    ReiconIcon(icon: .chevronDown, size: 9)
-                        .foregroundStyle(Theme.textTertiary)
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(Capsule().fill(Theme.surfaceRaised))
+                ReiconIcon(icon: .calendarDays, size: 19)
+                    .foregroundStyle(isCalendarOpen ? Theme.brand : Theme.text)
+                    .frame(width: 38, height: 38)
+                    .glassCircle()
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("折算设置")
+            .buttonStyle(PressableStyle())
+            .accessibilityLabel("还款日历")
         }
         .padding(.horizontal, 2)
         .padding(.top, 2)
-        .padding(.bottom, 4)
+        .padding(.bottom, 6)
     }
 
-    // MARK: 筛选胶囊
+    private func jumpToNearestChargeMonth() {
+        let now = Date()
+        let active = subscriptions.filter { !$0.isPaused }
+        let nearest = active
+            .map { SubscriptionMath.upcomingCharge(for: $0, now: now, calendar: calendar) }
+            .min() ?? now
+        if let monthStart = calendar.date(from: calendar.dateComponents([.year, .month], from: nearest)) {
+            displayMonth = monthStart
+            selectedDate = nearest
+        }
+    }
 
-    private var filterBar: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 7) {
-                ForEach(SubscriptionFilter.allCases) { item in
-                    let isOn = filter == item
-                    Button {
-                        withAnimation(.snappy(duration: 0.18)) { filter = item }
-                    } label: {
-                        Text(item.title)
-                            .font(.system(size: 12, weight: isOn ? .medium : .regular))
-                            .foregroundStyle(isOn ? Color.white : Theme.textSecondary)
-                            .padding(.horizontal, 13)
-                            .padding(.vertical, 6)
-                            .background(
-                                Capsule().fill(isOn ? Theme.brand : Theme.surface)
-                            )
+    // MARK: 日历抽屉（自动定位最近还款月 + 重点强调 + 点日只展示图标）
+
+    private var calendarDrawer: some View {
+        let monthNum = calendar.component(.month, from: displayMonth)
+        let yearNum = calendar.component(.year, from: displayMonth)
+        let selectedSubs = selectedDate.map { subscriptionsDue(on: $0) } ?? []
+
+        return VStack(alignment: .leading, spacing: 11) {
+            HStack {
+                Text("\(yearNum)年\(monthNum)月")
+                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(Theme.text)
+
+                Spacer()
+
+                HStack(spacing: 4) {
+                    Button { shiftMonth(-1) } label: {
+                        ReiconIcon(icon: .chevronLeft, size: 11)
+                            .foregroundStyle(Theme.textSecondary)
+                            .frame(width: 28, height: 28)
+                            .background(Circle().fill(Theme.surfaceRaised))
+                    }
+                    .buttonStyle(.plain)
+
+                    Button { shiftMonth(1) } label: {
+                        ReiconIcon(icon: .chevronRight, size: 11)
+                            .foregroundStyle(Theme.textSecondary)
+                            .frame(width: 28, height: 28)
+                            .background(Circle().fill(Theme.surfaceRaised))
                     }
                     .buttonStyle(.plain)
                 }
             }
-            .padding(.vertical, 1)
-        }
-    }
 
-    // MARK: 月均汇总 + 月度支出进度条 + 折叠周历/月历
+            weekdayHeader
 
-    private var summaryCalendarCard: some View {
-        let active = subscriptions.filter { !$0.isPaused }
-        let monthly = active.reduce(0) { $0 + $1.monthlyCNY(rate: usdToCny) }
-        let yearly = monthly * 12
-        let split = monthSpendSplit(active: active)
-
-        return VStack(alignment: .leading, spacing: 12) {
-            // 首行：月均固定英雄数字 + 月份切换 + 折叠
-            HStack(alignment: .center, spacing: 6) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("本月固定")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.textTertiary)
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text("¥\(money(monthly))")
-                            .font(.system(size: 22, weight: .semibold))
-                            .monospacedDigit()
-                            .foregroundStyle(Theme.text)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.7)
-                        Text("年化 ¥\(money(yearly, decimals: 0))")
-                            .font(.system(size: 10.5))
-                            .monospacedDigit()
-                            .foregroundStyle(Theme.textTertiary)
-                            .lineLimit(1)
-                    }
+            VStack(spacing: 4) {
+                ForEach(Array(monthWeeks.enumerated()), id: \.offset) { _, week in
+                    weekRow(cells: week)
                 }
-                Spacer(minLength: 4)
-                monthSwitcher
-                collapseButton
             }
 
-            // 月度支出双色进度条（已扣 vs 待扣）
-            VStack(alignment: .leading, spacing: 6) {
-                GeometryReader { geo in
-                    let total = max(0.01, split.charged + split.pending)
-                    let chargedWidth = split.totalCount > 0 ? geo.size.width * (split.charged / total) : 0
-                    let pendingWidth = split.totalCount > 0 ? geo.size.width * (split.pending / total) : 0
-                    ZStack(alignment: .leading) {
-                        Capsule().fill(Theme.surfaceWell)
-                        HStack(spacing: 1) {
-                            if chargedWidth > 0 {
-                                Rectangle()
-                                    .fill(Theme.brand)
-                                    .frame(width: chargedWidth)
+            if !selectedSubs.isEmpty {
+                Rectangle().fill(Theme.stroke).frame(height: 0.5)
+                // 只展示当日还款项目图标（不堆文字），点击图标直接查看/编辑
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(selectedSubs) { sub in
+                            Button {
+                                editorContext = SubscriptionEditorContext(subscription: sub, preset: nil)
+                            } label: {
+                                BrandLogo(brand: sub.brand, size: 32)
+                                    .padding(4)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: AppRadius.control, style: .continuous)
+                                            .fill(Theme.surfaceRaised)
+                                    )
                             }
-                            if pendingWidth > 0 {
-                                Rectangle()
-                                    .fill(SubPalette.orange.opacity(0.60))
-                                    .frame(width: pendingWidth)
-                            }
+                            .buttonStyle(PressableStyle())
+                            .accessibilityLabel(sub.name)
                         }
-                        .clipShape(Capsule())
                     }
+                    .padding(.vertical, 2)
                 }
-                .frame(height: 6)
-
-                HStack(spacing: 10) {
-                    HStack(spacing: 4) {
-                        Circle().fill(Theme.brand).frame(width: 5, height: 5)
-                        Text("已扣 ¥\(money(split.charged, decimals: 0))")
-                    }
-                    HStack(spacing: 4) {
-                        Circle().fill(SubPalette.orange.opacity(0.75)).frame(width: 5, height: 5)
-                        Text("待扣 ¥\(money(split.pending, decimals: 0))")
-                    }
-                    Spacer()
-                    if let selectedDate {
-                        Button {
-                            withAnimation(.snappy(duration: 0.18)) { self.selectedDate = nil }
-                        } label: {
-                            Text("\(calendar.component(.month, from: selectedDate))/\(calendar.component(.day, from: selectedDate)) · 清除")
-                                .foregroundStyle(Theme.brand)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .font(.system(size: 10.5))
-                .monospacedDigit()
-                .foregroundStyle(Theme.textTertiary)
-            }
-
-            Rectangle()
-                .fill(Theme.stroke)
-                .frame(height: 0.5)
-
-            if calendarCollapsed {
-                weekRow(index: collapsedWeekIndex)
-            } else {
-                weekdayHeader
-                VStack(spacing: 2) {
-                    ForEach(Array(monthWeeks.enumerated()), id: \.offset) { _, week in
-                        weekRow(cells: week)
-                    }
-                }
-                legend
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .cardSurface(padding: 15)
     }
 
-    private func monthSpendSplit(active: [Subscription]) -> (charged: Double, pending: Double, totalCount: Int) {
-        let today = calendar.startOfDay(for: Date())
-        var charged: Double = 0
-        var pending: Double = 0
-        var count = 0
-        for sub in active {
-            let amount = sub.cny(rate: usdToCny)
-            for occ in SubscriptionMath.occurrences(for: sub, inMonthOf: displayMonth, calendar: calendar) {
-                count += 1
-                if calendar.startOfDay(for: occ) < today {
-                    charged += amount
-                } else {
-                    pending += amount
-                }
-            }
-        }
-        return (charged, pending, count)
-    }
-
-    private var monthSwitcher: some View {
-        HStack(spacing: 2) {
-            Button {
-                shiftMonth(-1)
-            } label: {
-                ReiconIcon(icon: .chevronLeft, size: 9)
-                    .foregroundStyle(Theme.textTertiary)
-                    .frame(width: 20, height: 22)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-
-            Text("\(calendar.component(.month, from: displayMonth))月")
-                .font(.system(size: 12, weight: .medium))
-                .monospacedDigit()
-                .foregroundStyle(Theme.text)
-                .frame(minWidth: 34)
-
-            Button {
-                shiftMonth(1)
-            } label: {
-                ReiconIcon(icon: .chevronRight, size: 9)
-                    .foregroundStyle(Theme.textTertiary)
-                    .frame(width: 20, height: 22)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-        }
-    }
-
-    private var collapseButton: some View {
-        Button {
-            withAnimation(.snappy(duration: 0.24)) { calendarCollapsed.toggle() }
-        } label: {
-            ReiconIcon(icon: calendarCollapsed ? .chevronDown : .chevronUp, size: 10)
-                .foregroundStyle(Theme.textTertiary)
-                .frame(width: 22, height: 22)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(calendarCollapsed ? "展开月历" : "收起月历")
-    }
-
     private var weekdayHeader: some View {
         HStack(spacing: 0) {
             ForEach(["一", "二", "三", "四", "五", "六", "日"], id: \.self) { day in
                 Text(day)
-                    .font(.system(size: 10))
+                    .font(.system(size: 10.5))
                     .foregroundStyle(Theme.textTertiary)
                     .frame(maxWidth: .infinity)
             }
         }
-    }
-
-    private var legend: some View {
-        HStack(spacing: 12) {
-            Spacer()
-            legendItem(color: SubPalette.orange, text: "临期")
-            legendItem(color: Theme.brand, text: "待扣")
-            legendItem(color: Theme.textTertiary, text: "已扣")
-        }
-    }
-
-    private func legendItem(color: Color, text: String) -> some View {
-        HStack(spacing: 4) {
-            Circle().fill(color).frame(width: 3.5, height: 3.5)
-            Text(text)
-                .font(.system(size: 9.5))
-                .foregroundStyle(Theme.textTertiary)
-        }
-    }
-
-    // MARK: 月历格子
-
-    private func weekRow(index: Int) -> some View {
-        weekRow(cells: monthWeeks.indices.contains(index) ? monthWeeks[index] : [])
     }
 
     private func weekRow(cells: [Date?]) -> some View {
@@ -353,7 +200,7 @@ struct SubscriptionMainView: View {
             }
             if cells.count < 7 {
                 ForEach(cells.count..<7, id: \.self) { _ in
-                    Color.clear.frame(maxWidth: .infinity, minHeight: 32)
+                    Color.clear.frame(maxWidth: .infinity, minHeight: 34)
                 }
             }
         }
@@ -366,44 +213,60 @@ struct SubscriptionMainView: View {
                 let isToday = calendar.isDateInToday(date)
                 let isSelected = selectedDate.map { calendar.isDate($0, inSameDayAs: date) } ?? false
                 let dot = dayDots[key]
+                let hasCharge = dot != nil
+
+                let circleFill: Color = {
+                    if isSelected { return Theme.brand }
+                    if dot == .imminent { return SubPalette.orange.opacity(0.18) }
+                    if dot == .pending { return Theme.brandSoft }
+                    if isToday { return Theme.surfaceRaised }
+                    return .clear
+                }()
+
+                let textColor: Color = {
+                    if isSelected { return Color.white }
+                    if dot == .imminent { return SubPalette.orange }
+                    if dot == .pending { return Theme.brand }
+                    return Theme.text
+                }()
 
                 VStack(spacing: 2) {
                     ZStack {
-                        if isToday {
-                            Circle()
-                                .fill(Theme.brandSoft)
-                                .frame(width: 23, height: 23)
-                        }
+                        Circle()
+                            .fill(circleFill)
+                            .frame(width: 26, height: 26)
                         Text("\(calendar.component(.day, from: date))")
-                            .font(.system(size: 12.5, weight: isToday ? .semibold : .regular))
+                            .font(.system(size: 12.5, weight: hasCharge || isToday || isSelected ? .semibold : .regular, design: .rounded))
                             .monospacedDigit()
-                            .foregroundStyle(isToday ? Theme.brand : Theme.text)
+                            .foregroundStyle(textColor)
                     }
-                    .frame(height: 23)
-                    .overlay {
-                        if isSelected {
-                            Circle()
-                                .strokeBorder(Theme.brand, lineWidth: 1.5)
-                                .frame(width: 27, height: 27)
-                        }
-                    }
+                    .frame(height: 26)
 
                     Circle()
-                        .fill(dotColor(dot))
-                        .frame(width: 3.5, height: 3.5)
-                        .opacity(dot == nil ? 0 : 1)
+                        .fill(dotColor(dot, isSelected: isSelected))
+                        .frame(width: 4, height: 4)
+                        .opacity(hasCharge ? 1 : 0)
                 }
                 .frame(maxWidth: .infinity)
                 .contentShape(Rectangle())
-                .onTapGesture { toggleSelection(date) }
+                .onTapGesture {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    withAnimation(.snappy(duration: 0.2)) {
+                        if let selectedDate, calendar.isDate(selectedDate, inSameDayAs: date) {
+                            self.selectedDate = nil
+                        } else {
+                            selectedDate = date
+                        }
+                    }
+                }
             } else {
-                Color.clear
-                    .frame(maxWidth: .infinity, minHeight: 30)
+                Color.clear.frame(maxWidth: .infinity, minHeight: 34)
             }
         }
     }
 
-    private func dotColor(_ state: DotState?) -> Color {
+    private func dotColor(_ state: DotState?, isSelected: Bool) -> Color {
+        if isSelected { return Theme.brand }
         switch state {
         case .imminent: return SubPalette.orange
         case .pending: return Theme.brand
@@ -412,118 +275,335 @@ struct SubscriptionMainView: View {
         }
     }
 
-    // MARK: 列表
+    // MARK: 方案 A 顶部 Bento 双核区
+
+    private var bentoTop: some View {
+        let active = subscriptions.filter { !$0.isPaused }
+        let monthly = active.reduce(0) { $0 + $1.monthlyCNY(usdRate: usdToCny, jpyRate: jpyToCny) }
+        let yearly = monthly * 12
+        let split = monthSpendSplit(active: active)
+
+        return HStack(alignment: .top, spacing: Theme.cardGap) {
+            // 左主卡：本月固定 + 已扣/待扣双色轨
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 6) {
+                    Text("本月固定")
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(Theme.textSecondary)
+                    Spacer()
+                    Text("\(active.count) 项")
+                        .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(Theme.brand)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 2.5)
+                        .background(Capsule().fill(Theme.brandSoft))
+                }
+
+                Spacer(minLength: 6)
+
+                Text("¥\(money(monthly, decimals: 0))")
+                    .font(.system(size: 30, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(Theme.text)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+
+                Text("年化 ¥\(money(yearly, decimals: 0))")
+                    .font(.system(size: 11, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(Theme.textTertiary)
+                    .padding(.top, 2)
+
+                Spacer(minLength: 10)
+
+                VStack(alignment: .leading, spacing: 5) {
+                    GeometryReader { geo in
+                        let total = max(0.01, split.charged + split.pending)
+                        let cw = split.totalCount > 0 ? geo.size.width * (split.charged / total) : 0
+                        let pw = split.totalCount > 0 ? geo.size.width * (split.pending / total) : 0
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(Theme.surfaceWell)
+                            HStack(spacing: 1) {
+                                if cw > 0 { Rectangle().fill(Theme.brand).frame(width: cw) }
+                                if pw > 0 { Rectangle().fill(SubPalette.orange.opacity(0.68)).frame(width: pw) }
+                            }
+                            .clipShape(Capsule())
+                        }
+                    }
+                    .frame(height: 5)
+
+                    HStack {
+                        Text("已扣 ¥\(money(split.charged, decimals: 0))")
+                        Spacer()
+                        Text("待扣 ¥\(money(split.pending, decimals: 0))")
+                    }
+                    .font(.system(size: 10.5, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(Theme.textTertiary)
+                }
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity)
+            .frame(height: 148, alignment: .topLeading)
+            .cardElevation(radius: AppRadius.card)
+
+            // 右聚焦卡：下一笔扣费（图标 + 名称 + 价格 + 无框大号强调日期）
+            nextChargeBentoCard
+                .frame(width: 148, height: 148)
+        }
+    }
+
+    @ViewBuilder
+    private var nextChargeBentoCard: some View {
+        if let next = nextActiveSubscription {
+            Button {
+                editorContext = SubscriptionEditorContext(subscription: next, preset: nil)
+            } label: {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(alignment: .top) {
+                        BrandLogo(brand: next.brand, size: 28)
+                        Spacer(minLength: 4)
+                        framelessCountdown(for: next, numberSize: 20, unitSize: 10.5)
+                    }
+
+                    Spacer(minLength: 8)
+
+                    Text("下一笔扣费")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(Theme.textTertiary)
+
+                    Text(next.name)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Theme.text)
+                        .lineLimit(1)
+                        .padding(.top, 2)
+
+                    Text(next.displayPrice)
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(Theme.textSecondary)
+                        .padding(.top, 3)
+                }
+                .padding(14)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .cardElevation(radius: AppRadius.card)
+            }
+            .buttonStyle(PressableStyle())
+        } else {
+            Button {
+                editorContext = SubscriptionEditorContext(subscription: nil, preset: nil)
+            } label: {
+                VStack(alignment: .leading, spacing: 0) {
+                    ReiconIcon(icon: .card, size: 22)
+                        .foregroundStyle(Theme.brand)
+                    Spacer()
+                    Text("下一笔扣费")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(Theme.textTertiary)
+                    Text("待添加")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Theme.text)
+                        .padding(.top, 2)
+                }
+                .padding(14)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .cardElevation(radius: AppRadius.card)
+            }
+            .buttonStyle(PressableStyle())
+        }
+    }
+
+    // MARK: 订阅列表（无框横向排列 + 从近到远）
 
     private var subscriptionList: some View {
-        let list = visibleSubscriptions
-        return VStack(spacing: Theme.cardGap) {
+        let list = sortedSubscriptions
+        return VStack(spacing: 0) {
             if list.isEmpty {
-                emptyState
+                emptyPresetsCard
+                    .padding(.top, 4)
             } else {
-                ForEach(list) { sub in
+                ForEach(Array(list.enumerated()), id: \.element.id) { index, sub in
                     SubscriptionSwipeRow(
                         sub: sub,
                         swipedID: $swipedID,
                         onTogglePause: { togglePause(sub) },
                         onDelete: { delete(sub) }
                     ) {
-                        SubscriptionCardView(
-                            sub: sub,
-                            rate: usdToCny,
-                            showCNY: showCNY
-                        )
-                        .onTapGesture {
+                        Button {
                             editorContext = SubscriptionEditorContext(subscription: sub, preset: nil)
-                        }
-                    }
-                }
-            }
-        }
-    }
+                        } label: {
+                            HStack(spacing: 13) {
+                                BrandLogo(brand: sub.brand, size: 34)
 
-    private var emptyState: some View {
-        Group {
-            if subscriptions.isEmpty {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        Text("快速记录常用订阅")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(Theme.text)
-                        Spacer()
-                        Text("点一下直接录入")
-                            .font(.system(size: 11))
-                            .foregroundStyle(Theme.textTertiary)
-                    }
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(sub.name)
+                                        .font(.system(size: 15, weight: .semibold))
+                                        .foregroundStyle(sub.isPaused ? Theme.textTertiary : Theme.text)
+                                        .lineLimit(1)
 
-                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
-                        ForEach(SubscriptionPreset.all) { preset in
-                            Button {
-                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                                editorContext = SubscriptionEditorContext(subscription: nil, preset: preset)
-                            } label: {
-                                HStack(spacing: 8) {
-                                    BrandLogo(brand: preset.brand, size: 18)
-                                    VStack(alignment: .leading, spacing: 1) {
-                                        Text(preset.label)
-                                            .font(.system(size: 12.5, weight: .medium))
-                                            .foregroundStyle(Theme.text)
-                                            .lineLimit(1)
-                                        Text("\(preset.currency.symbol)\(String(format: "%.0f", preset.price))/\(preset.cycle.shortTitle)")
-                                            .font(.system(size: 10))
+                                    HStack(spacing: 4) {
+                                        Text(sub.displayPrice)
+                                            .font(.system(size: 13, weight: .medium, design: .rounded))
                                             .monospacedDigit()
+                                            .foregroundStyle(Theme.textSecondary)
+                                        Text("· \(sub.cycle.title)")
+                                            .font(.system(size: 11.5))
                                             .foregroundStyle(Theme.textTertiary)
                                     }
-                                    Spacer(minLength: 2)
-                                    ReiconIcon(icon: .add, size: 12)
-                                        .foregroundStyle(Theme.brand)
                                 }
-                                .padding(.horizontal, 11)
-                                .padding(.vertical, 10)
-                                .background(
-                                    RoundedRectangle(cornerRadius: AppRadius.item, style: .continuous)
-                                        .fill(Theme.surfaceRaised)
-                                )
+
+                                Spacer(minLength: 8)
+
+                                framelessCountdown(for: sub, numberSize: 22, unitSize: 11)
                             }
-                            .buttonStyle(PressableStyle())
+                            .padding(.vertical, 13)
+                            .padding(.horizontal, 4)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Theme.bg)
+                            .contentShape(Rectangle())
                         }
+                        .buttonStyle(.plain)
+                    }
+
+                    if index < list.count - 1 {
+                        Rectangle()
+                            .fill(Theme.stroke)
+                            .frame(height: 0.5)
+                            .padding(.leading, 51)
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .cardSurface(padding: 15)
+            }
+        }
+        .padding(.top, 4)
+    }
+
+    /// 无框倒计时展示：数字大于文字且用强调色（圆体）；≥10 天直接显示 M 月 d 日
+    @ViewBuilder
+    private func framelessCountdown(for sub: Subscription, numberSize: CGFloat, unitSize: CGFloat) -> some View {
+        if sub.isPaused {
+            Text("已暂停")
+                .font(.system(size: unitSize + 1))
+                .foregroundStyle(Theme.textTertiary)
+        } else {
+            let days = SubscriptionMath.daysRemaining(for: sub) ?? 0
+            let accentColor = days <= 3 ? SubPalette.orange : Theme.brand
+
+            if days <= 0 {
+                Text("今天")
+                    .font(.system(size: numberSize - 3, weight: .bold, design: .rounded))
+                    .foregroundStyle(SubPalette.orange)
+            } else if days < 10 {
+                HStack(alignment: .lastTextBaseline, spacing: 2) {
+                    Text("\(days)")
+                        .font(.system(size: numberSize, weight: .bold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(accentColor)
+                    Text("天后")
+                        .font(.system(size: unitSize))
+                        .foregroundStyle(Theme.textSecondary)
+                }
             } else {
-                Text("当前筛选下暂无订阅")
-                    .font(.system(size: 12.5))
-                    .foregroundStyle(Theme.textTertiary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 26)
-                    .cardSurface(padding: 14)
+                let target = SubscriptionMath.upcomingCharge(for: sub, calendar: calendar)
+                let m = calendar.component(.month, from: target)
+                let d = calendar.component(.day, from: target)
+                HStack(alignment: .lastTextBaseline, spacing: 1.5) {
+                    Text("\(m)")
+                        .font(.system(size: numberSize - 2, weight: .bold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(Theme.brand)
+                    Text("月")
+                        .font(.system(size: unitSize))
+                        .foregroundStyle(Theme.textSecondary)
+                    Text("\(d)")
+                        .font(.system(size: numberSize - 2, weight: .bold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(Theme.brand)
+                    Text("日")
+                        .font(.system(size: unitSize))
+                        .foregroundStyle(Theme.textSecondary)
+                }
             }
         }
     }
 
-    // MARK: 数据
+    private var emptyPresetsCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("快速添加订阅")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Theme.text)
+                Spacer()
+                Text("点一下直接录入")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.textTertiary)
+            }
 
-    private var visibleSubscriptions: [Subscription] {
-        var list: [Subscription]
-        switch filter {
-        case .all:
-            list = subscriptions
-        case .paused:
-            return Subscription.sortedForDisplay(subscriptions.filter { $0.isPaused })
-        case .ai:
-            list = subscriptions.filter { !$0.isPaused && $0.category == .ai }
-        case .media:
-            list = subscriptions.filter { !$0.isPaused && $0.category == .media }
-        case .cloud:
-            list = subscriptions.filter { !$0.isPaused && $0.category == .cloud }
-        }
-        if let selectedDate {
-            list = list.filter { sub in
-                SubscriptionMath.occurrences(for: sub, inMonthOf: displayMonth, calendar: calendar)
-                    .contains { calendar.isDate($0, inSameDayAs: selectedDate) }
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
+                ForEach(SubscriptionPreset.all.prefix(8)) { preset in
+                    Button {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        editorContext = SubscriptionEditorContext(subscription: nil, preset: preset)
+                    } label: {
+                        HStack(spacing: 8) {
+                            BrandLogo(brand: preset.brand, size: 20)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(preset.label)
+                                    .font(.system(size: 12.5, weight: .medium))
+                                    .foregroundStyle(Theme.text)
+                                    .lineLimit(1)
+                                Text("\(preset.currency.symbol)\(preset.currency == .JPY ? String(format: "%.0f", preset.price) : String(format: "%.0f", preset.price))/\(preset.cycle.shortTitle)")
+                                    .font(.system(size: 10, design: .rounded))
+                                    .monospacedDigit()
+                                    .foregroundStyle(Theme.textTertiary)
+                            }
+                            Spacer(minLength: 2)
+                            ReiconIcon(icon: .add, size: 12)
+                                .foregroundStyle(Theme.brand)
+                        }
+                        .padding(.horizontal, 11)
+                        .padding(.vertical, 10)
+                        .background(
+                            RoundedRectangle(cornerRadius: AppRadius.item, style: .continuous)
+                                .fill(Theme.surfaceRaised)
+                        )
+                    }
+                    .buttonStyle(PressableStyle())
+                }
             }
         }
-        return Subscription.sortedForDisplay(list)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .cardSurface(padding: 15)
+    }
+
+    // MARK: 数据与操作
+
+    private func subscriptionsDue(on date: Date) -> [Subscription] {
+        subscriptions.filter { sub in
+            guard !sub.isPaused else { return false }
+            return SubscriptionMath.occurrences(for: sub, inMonthOf: displayMonth, calendar: calendar)
+                .contains { calendar.isDate($0, inSameDayAs: date) }
+        }
+    }
+
+    private func monthSpendSplit(active: [Subscription]) -> (charged: Double, pending: Double, totalCount: Int) {
+        let today = calendar.startOfDay(for: Date())
+        let currentMonthStart = calendar.date(from: calendar.dateComponents([.year, .month], from: today)) ?? today
+        var charged: Double = 0
+        var pending: Double = 0
+        var count = 0
+        for sub in active {
+            let amount = sub.cny(usdRate: usdToCny, jpyRate: jpyToCny)
+            for occ in SubscriptionMath.occurrences(for: sub, inMonthOf: currentMonthStart, calendar: calendar) {
+                count += 1
+                if calendar.startOfDay(for: occ) < today {
+                    charged += amount
+                } else {
+                    pending += amount
+                }
+            }
+        }
+        return (charged, pending, count)
     }
 
     private func shiftMonth(_ delta: Int) {
@@ -531,17 +611,6 @@ struct SubscriptionMainView: View {
         withAnimation(.snappy(duration: 0.2)) {
             displayMonth = newMonth
             selectedDate = nil
-        }
-    }
-
-    private func toggleSelection(_ date: Date) {
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        withAnimation(.snappy(duration: 0.2)) {
-            if let selectedDate, calendar.isDate(selectedDate, inSameDayAs: date) {
-                self.selectedDate = nil
-            } else {
-                selectedDate = date
-            }
         }
     }
 
@@ -579,7 +648,7 @@ struct SubscriptionMainView: View {
         return formatter.string(from: NSNumber(value: value)) ?? String(format: "%.\(decimals)f", value)
     }
 
-    // MARK: 月历计算
+    // MARK: 月历点位计算
 
     private enum DotState: Int, Comparable {
         case charged = 0
@@ -613,12 +682,11 @@ struct SubscriptionMainView: View {
         return result
     }
 
-    /// 月历网格：周一开头，nil 为占位
     private var monthWeeks: [[Date?]] {
         guard let monthStart = calendar.date(from: calendar.dateComponents([.year, .month], from: displayMonth)),
               let dayRange = calendar.range(of: .day, in: .month, for: monthStart) else { return [] }
 
-        let leading = (calendar.component(.weekday, from: monthStart) + 5) % 7   // 周一=0
+        let leading = (calendar.component(.weekday, from: monthStart) + 5) % 7
         var cells: [Date?] = Array(repeating: nil, count: leading)
         for day in 0..<dayRange.count {
             cells.append(calendar.date(byAdding: .day, value: day, to: monthStart))
@@ -626,102 +694,6 @@ struct SubscriptionMainView: View {
         while cells.count % 7 != 0 { cells.append(nil) }
 
         return stride(from: 0, to: cells.count, by: 7).map { Array(cells[$0..<min($0 + 7, cells.count)]) }
-    }
-
-    private var collapsedWeekIndex: Int {
-        let today = Date()
-        guard let week = monthWeeks.firstIndex(where: { week in
-            week.contains { date in
-                guard let date else { return false }
-                return calendar.isDate(date, inSameDayAs: today)
-            }
-        }) else {
-            return 0
-        }
-        return week
-    }
-}
-
-// MARK: - 订阅卡片
-
-private struct SubscriptionCardView: View {
-    let sub: Subscription
-    let rate: Double
-    let showCNY: Bool
-
-    var body: some View {
-        let days = SubscriptionMath.daysRemaining(for: sub)
-        let isUrgent = (days ?? 999) <= 3
-        let progress = SubscriptionMath.cycleProgress(for: sub)
-
-        VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                // 品牌托盘
-                RoundedRectangle(cornerRadius: AppRadius.item, style: .continuous)
-                    .fill(Theme.surfaceRaised)
-                    .frame(width: 40, height: 40)
-                    .overlay {
-                        BrandLogo(brand: sub.brand, size: 24)
-                    }
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(sub.name)
-                        .font(.system(size: 14.5, weight: .semibold))
-                        .foregroundStyle(Theme.text)
-                        .lineLimit(1)
-
-                    Text("\(sub.cycle.title) · \(sub.displayPrice) · \(sub.payment.title)")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.textTertiary)
-                        .lineLimit(1)
-                }
-
-                Spacer(minLength: 6)
-
-                VStack(alignment: .trailing, spacing: 5) {
-                    Text(countdownText(days: days))
-                        .font(.system(size: 11, weight: .medium))
-                        .monospacedDigit()
-                        .foregroundStyle(sub.isPaused ? Theme.textTertiary : (isUrgent ? SubPalette.orange : Theme.text))
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 4)
-                        .background(
-                            Capsule().fill(
-                                sub.isPaused
-                                    ? Theme.surfaceRaised
-                                    : (isUrgent ? SubPalette.orange.opacity(0.14) : Theme.surfaceRaised)
-                            )
-                        )
-
-                    if showCNY, sub.currency == .USD, !sub.isPaused {
-                        Text("≈ ¥\(String(format: "%.0f", sub.cny(rate: rate)))")
-                            .font(.system(size: 10))
-                            .monospacedDigit()
-                            .foregroundStyle(Theme.textTertiary)
-                    }
-                }
-            }
-            .padding(13)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .overlay(alignment: .bottomLeading) {
-            GeometryReader { geo in
-                Rectangle()
-                    .fill(sub.isPaused ? Theme.textTertiary.opacity(0.35) : (isUrgent ? SubPalette.orange : Theme.brand))
-                    .frame(width: geo.size.width * progress, height: 2.5)
-                    .frame(maxHeight: .infinity, alignment: .bottom)
-            }
-            .clipShape(RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous))
-        }
-        .cardElevation(radius: AppRadius.card)
-        .contentShape(RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous))
-    }
-
-    private func countdownText(days: Int?) -> String {
-        if sub.isPaused { return "已暂停" }
-        guard let days else { return "—" }
-        if days <= 0 { return "今天扣费" }
-        return "剩 \(days) 天"
     }
 }
 
@@ -738,11 +710,11 @@ private struct SubscriptionSwipeRow<Content: View>: View {
     @State private var dragBase: CGFloat = 0
     @State private var dragTranslation: CGFloat = 0
 
-    private let actionWidth: CGFloat = 136
+    private let actionWidth: CGFloat = 132
     private var isOpen: Bool { swipedID == sub.id }
     private var offset: CGFloat {
         if dragging {
-            return min(0, max(-actionWidth * 1.4, dragBase + dragTranslation))
+            return min(0, max(-actionWidth * 1.35, dragBase + dragTranslation))
         }
         return isOpen ? -actionWidth : 0
     }
@@ -793,10 +765,10 @@ private struct SubscriptionSwipeRow<Content: View>: View {
                 Text(title).font(.system(size: 10, weight: .medium))
             }
             .foregroundStyle(foreground)
-            .frame(width: 65)
+            .frame(width: 62)
             .frame(maxHeight: .infinity)
             .background(
-                RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous)
+                RoundedRectangle(cornerRadius: AppRadius.item, style: .continuous)
                     .fill(background)
             )
         }
@@ -837,5 +809,5 @@ private struct SubscriptionSwipeRow<Content: View>: View {
 
 enum SubPalette {
     static let orange = Color(hex: 0xF59E0B)
-    static let green = Color(hex: 0x34C759)
+    static let green = Color(hex: 0x2FB356)
 }

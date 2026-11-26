@@ -2,10 +2,13 @@ import SwiftUI
 import SwiftData
 import UIKit
 
-/// 新增 / 编辑订阅弹窗。
+/// 新增 / 编辑订阅弹窗（币种切换与 USD / JPY 汇率折算仅在此详情/添加页展示）。
 struct SubscriptionEditor: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
+
+    @AppStorage("usdToCny") private var usdToCny = 7.25
+    @AppStorage("jpyToCny") private var jpyToCny = 0.048
 
     let subscription: Subscription?
     var initialPreset: SubscriptionPreset? = nil
@@ -22,12 +25,15 @@ struct SubscriptionEditor: View {
     @State private var remindDays: Int
     @State private var validation: String?
 
+    @State private var editingRateCurrency: SubscriptionCurrency?
+    @State private var rateDraft = ""
+
     init(subscription: Subscription?, initialPreset: SubscriptionPreset? = nil) {
         self.subscription = subscription
         self.initialPreset = initialPreset
         if let sub = subscription {
             _name = State(initialValue: sub.name)
-            _priceText = State(initialValue: String(format: "%.2f", sub.price))
+            _priceText = State(initialValue: sub.currency == .JPY ? String(format: "%.0f", sub.price) : String(format: "%.2f", sub.price))
             _currency = State(initialValue: sub.currency)
             _cycle = State(initialValue: sub.cycle)
             _nextCharge = State(initialValue: sub.nextChargeDate)
@@ -39,7 +45,7 @@ struct SubscriptionEditor: View {
         } else if let preset = initialPreset {
             let calendar = Calendar.current
             _name = State(initialValue: preset.name)
-            _priceText = State(initialValue: String(format: "%.2f", preset.price))
+            _priceText = State(initialValue: preset.currency == .JPY ? String(format: "%.0f", preset.price) : String(format: "%.2f", preset.price))
             _currency = State(initialValue: preset.currency)
             _cycle = State(initialValue: preset.cycle)
             _nextCharge = State(initialValue: calendar.date(
@@ -54,17 +60,21 @@ struct SubscriptionEditor: View {
             let calendar = Calendar.current
             _name = State(initialValue: "")
             _priceText = State(initialValue: "")
-            _currency = State(initialValue: .USD)
+            _currency = State(initialValue: .CNY)
             _cycle = State(initialValue: .monthly)
             _nextCharge = State(initialValue: calendar.date(
                 byAdding: .month, value: 1, to: calendar.startOfDay(for: Date())
             ) ?? Date())
-            _payment = State(initialValue: .visa)
+            _payment = State(initialValue: .alipay)
             _category = State(initialValue: .other)
             _brand = State(initialValue: .generic)
             _remindEnabled = State(initialValue: true)
             _remindDays = State(initialValue: 3)
         }
+    }
+
+    private var parsedPrice: Double {
+        Double(priceText.replacingOccurrences(of: ",", with: ".")) ?? 0
     }
 
     var body: some View {
@@ -81,12 +91,15 @@ struct SubscriptionEditor: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     saveButton
+                    if let subscription {
+                        deleteButton(subscription)
+                    }
                 }
                 .padding(.horizontal, Theme.screenPadding)
                 .padding(.vertical, 12)
             }
             .background(Theme.bg)
-            .navigationTitle(subscription == nil ? "添加订阅" : "编辑订阅")
+            .navigationTitle(subscription == nil ? "添加订阅" : "订阅详情")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
@@ -102,9 +115,42 @@ struct SubscriptionEditor: View {
                     .accessibilityLabel("关闭")
                 }
             }
-            .tint(Theme.ink)
+            .tint(Theme.brand)
         }
         .presentationBackground(Theme.bg)
+        .alert(rateAlertTitle, isPresented: Binding(
+            get: { editingRateCurrency != nil },
+            set: { if !$0 { editingRateCurrency = nil } }
+        )) {
+            TextField(editingRateCurrency == .JPY ? "4.80" : "7.25", text: $rateDraft)
+                .keyboardType(.decimalPad)
+            Button("保存") {
+                if let value = Double(rateDraft.replacingOccurrences(of: ",", with: ".")), value > 0 {
+                    if editingRateCurrency == .USD {
+                        usdToCny = value
+                    } else if editingRateCurrency == .JPY {
+                        jpyToCny = value / 100.0
+                    }
+                }
+                editingRateCurrency = nil
+            }
+            Button("取消", role: .cancel) {
+                editingRateCurrency = nil
+            }
+        } message: {
+            Text(rateAlertMessage)
+        }
+    }
+
+    private var rateAlertTitle: String {
+        editingRateCurrency == .JPY ? "100 JPY → CNY 参考汇率" : "1 USD → CNY 参考汇率"
+    }
+
+    private var rateAlertMessage: String {
+        if editingRateCurrency == .JPY {
+            return "当前 100 JPY = \(String(format: "%.2f", jpyToCny * 100)) CNY"
+        }
+        return "当前 1 USD = \(String(format: "%.2f", usdToCny)) CNY"
     }
 
     // MARK: 预设胶囊
@@ -116,15 +162,16 @@ struct SubscriptionEditor: View {
                     Button {
                         apply(preset)
                     } label: {
-                        HStack(spacing: 5) {
-                            BrandLogo(brand: preset.brand, size: 14)
+                        HStack(spacing: 6) {
+                            BrandLogo(brand: preset.brand, size: 15)
                             Text(preset.label)
                                 .font(.system(size: 12))
                                 .foregroundStyle(Theme.textSecondary)
                         }
                         .padding(.horizontal, 11)
                         .padding(.vertical, 6)
-                        .background(Capsule().fill(Theme.surfaceRaised))
+                        .background(Capsule().fill(Theme.surface))
+                        .overlay(Capsule().strokeBorder(Theme.stroke, lineWidth: 0.5))
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("使用 \(preset.label) 预设")
@@ -138,7 +185,7 @@ struct SubscriptionEditor: View {
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
         withAnimation(.snappy(duration: 0.2)) {
             name = preset.name
-            priceText = String(format: "%.2f", preset.price)
+            priceText = preset.currency == .JPY ? String(format: "%.0f", preset.price) : String(format: "%.2f", preset.price)
             currency = preset.currency
             cycle = preset.cycle
             category = preset.category
@@ -152,26 +199,41 @@ struct SubscriptionEditor: View {
 
     private var formCard: some View {
         VStack(spacing: 0) {
-            // 名称
+            // 名称 + 可点击切换图标预览
             formRow("名称") {
-                TextField("订阅名称", text: $name)
-                    .font(.system(size: 13.5))
-                    .foregroundStyle(Theme.text)
-                    .multilineTextAlignment(.trailing)
-                    .autocorrectionDisabled()
+                HStack(spacing: 8) {
+                    Menu {
+                        ForEach(BrandIcon.allCases) { icon in
+                            Button {
+                                brand = icon
+                            } label: {
+                                Label { Text(iconLabel(icon)) } icon: { BrandLogo(brand: icon, size: 16) }
+                            }
+                        }
+                    } label: {
+                        BrandLogo(brand: brand, size: 22)
+                    }
+
+                    TextField("订阅名称", text: $name)
+                        .font(.system(size: 13.5))
+                        .foregroundStyle(Theme.text)
+                        .multilineTextAlignment(.trailing)
+                        .autocorrectionDisabled()
+                }
             }
 
             formDivider
 
-            // 价格
+            // 价格与币种（CNY / USD / JPY）
             formRow("价格") {
                 HStack(spacing: 8) {
-                    TextField("0.00", text: $priceText)
-                        .font(.system(size: 13.5))
+                    TextField(currency == .JPY ? "0" : "0.00", text: $priceText)
+                        .font(.system(size: 14, weight: .medium, design: .rounded))
+                        .monospacedDigit()
                         .foregroundStyle(Theme.text)
                         .multilineTextAlignment(.trailing)
                         .keyboardType(.decimalPad)
-                        .frame(maxWidth: 110)
+                        .frame(maxWidth: 92)
 
                     HStack(spacing: 4) {
                         ForEach(SubscriptionCurrency.allCases) { item in
@@ -181,6 +243,12 @@ struct SubscriptionEditor: View {
                         }
                     }
                 }
+            }
+
+            // 汇率折算行（仅在订阅详情 / 添加页且币种为 USD / JPY 时显示）
+            if currency == .USD || currency == .JPY {
+                formDivider
+                exchangeRateRow
             }
 
             formDivider
@@ -208,50 +276,70 @@ struct SubscriptionEditor: View {
 
             formDivider
 
-            // 付款方式 + 分类
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    Text("付款方式")
-                        .font(.system(size: 13.5))
-                        .foregroundStyle(Theme.text)
-                    Spacer()
-                    Menu {
-                        ForEach(PaymentMethod.allCases) { item in
-                            Button {
-                                payment = item
-                            } label: {
-                                Text(payment == item ? "✓ \(item.title)" : item.title)
-                            }
-                        }
-                    } label: {
-                        HStack(spacing: 4) {
-                            Text(payment.title)
-                                .font(.system(size: 13.5))
-                                .foregroundStyle(Theme.textSecondary)
-                            ReiconIcon(icon: .chevronDown, size: 9)
-                                .foregroundStyle(Theme.textTertiary)
+            // 付款方式
+            formRow("付款方式") {
+                Menu {
+                    ForEach(PaymentMethod.allCases) { item in
+                        Button {
+                            payment = item
+                        } label: {
+                            Text(payment == item ? "✓ \(item.title)" : item.title)
                         }
                     }
-                }
-
-                HStack {
-                    Text("分类")
-                        .font(.system(size: 13.5))
-                        .foregroundStyle(Theme.text)
-                    Spacer()
+                } label: {
                     HStack(spacing: 4) {
-                        ForEach(SubscriptionCategory.allCases) { item in
-                            capsule(item.title, isOn: category == item) {
-                                category = item
-                            }
-                        }
+                        Text(payment.title)
+                            .font(.system(size: 13.5))
+                            .foregroundStyle(Theme.textSecondary)
+                        ReiconIcon(icon: .chevronDown, size: 9)
+                            .foregroundStyle(Theme.textTertiary)
                     }
                 }
             }
-            .padding(.horizontal, 2)
-            .padding(.vertical, 13)
         }
         .cardSurface()
+    }
+
+    private var exchangeRateRow: some View {
+        let rateLabel: String = currency == .USD
+            ? "1 USD = \(String(format: "%.2f", usdToCny)) CNY"
+            : "100 JPY = \(String(format: "%.2f", jpyToCny * 100)) CNY"
+        let converted = parsedPrice * (currency == .USD ? usdToCny : jpyToCny)
+
+        return HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("汇率折算")
+                    .font(.system(size: 13.5))
+                    .foregroundStyle(Theme.text)
+                Text(rateLabel)
+                    .font(.system(size: 11, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(Theme.textTertiary)
+            }
+            Spacer(minLength: 6)
+            if parsedPrice > 0 {
+                Text("≈ ¥\(String(format: "%.2f", converted))")
+                    .font(.system(size: 13.5, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(Theme.brand)
+            }
+            Button {
+                rateDraft = currency == .JPY
+                    ? String(format: "%.2f", jpyToCny * 100)
+                    : String(format: "%.2f", usdToCny)
+                editingRateCurrency = currency
+            } label: {
+                Text("改汇率")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Theme.brand)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Capsule().fill(Theme.brandSoft))
+            }
+            .buttonStyle(.plain)
+        }
+        .frame(minHeight: 52)
+        .padding(.horizontal, 2)
     }
 
     private func formRow<Trailing: View>(_ label: String, @ViewBuilder trailing: () -> Trailing) -> some View {
@@ -275,11 +363,11 @@ struct SubscriptionEditor: View {
     private func capsule(_ title: String, isOn: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 11.5))
-                .foregroundStyle(isOn ? Theme.bg : Theme.textSecondary)
+                .font(.system(size: 11.5, weight: isOn ? .medium : .regular))
+                .foregroundStyle(isOn ? Color.white : Theme.textSecondary)
                 .padding(.horizontal, 9)
                 .padding(.vertical, 4)
-                .background(Capsule().fill(isOn ? Theme.text : Theme.surfaceRaised))
+                .background(Capsule().fill(isOn ? Theme.brand : Theme.surfaceRaised))
         }
         .buttonStyle(.plain)
     }
@@ -317,7 +405,7 @@ struct SubscriptionEditor: View {
         .cardSurface()
     }
 
-    // MARK: 保存
+    // MARK: 保存 / 删除
 
     private var saveButton: some View {
         Button(action: save) {
@@ -333,6 +421,22 @@ struct SubscriptionEditor: View {
         }
         .buttonStyle(PressableStyle())
         .padding(.top, 2)
+    }
+
+    private func deleteButton(_ sub: Subscription) -> some View {
+        Button(role: .destructive) {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            SubscriptionReminderService.cancelPendingNotifications(for: sub)
+            context.delete(sub)
+            try? context.save()
+            dismiss()
+        } label: {
+            Text("删除此订阅")
+                .font(.system(size: 13))
+                .foregroundStyle(Color.red)
+                .padding(.vertical, 8)
+        }
+        .buttonStyle(.plain)
     }
 
     private func save() {
@@ -381,9 +485,28 @@ struct SubscriptionEditor: View {
         SubscriptionReminderService.sync(all, in: context)
         dismiss()
     }
+
+    private func iconLabel(_ icon: BrandIcon) -> String {
+        switch icon {
+        case .gemini: return "Gemini"
+        case .qqMusic: return "QQ音乐"
+        case .neteaseMusic: return "网易云音乐"
+        case .jdBaitiao: return "京东白条"
+        case .appleMusic: return "Apple Music"
+        case .icloud: return "iCloud"
+        case .bilibili: return "哔哩哔哩"
+        case .baiduNetdisk: return "百度网盘"
+        case .openai: return "ChatGPT"
+        case .claude: return "Claude"
+        case .deepseek: return "DeepSeek"
+        case .google: return "Google"
+        case .apple: return "Apple"
+        case .generic: return "通用卡片"
+        }
+    }
 }
 
-// MARK: - 预设
+// MARK: - 预设（含全部指定品牌图标）
 
 struct SubscriptionPreset: Identifiable {
     let id: String
@@ -397,17 +520,25 @@ struct SubscriptionPreset: Identifiable {
     let payment: PaymentMethod
 
     static let all: [SubscriptionPreset] = [
-        .init(id: "chatgpt", label: "ChatGPT", name: "ChatGPT Plus", price: 20,
-              currency: .USD, cycle: .monthly, category: .ai, brand: .openai, payment: .visa),
         .init(id: "gemini", label: "Gemini", name: "Gemini Advanced", price: 19.99,
               currency: .USD, cycle: .monthly, category: .ai, brand: .gemini, payment: .visa),
+        .init(id: "qqmusic", label: "QQ音乐", name: "QQ音乐绿钻", price: 15,
+              currency: .CNY, cycle: .monthly, category: .media, brand: .qqMusic, payment: .wechat),
+        .init(id: "netease", label: "网易云音乐", name: "网易云黑胶", price: 15,
+              currency: .CNY, cycle: .monthly, category: .media, brand: .neteaseMusic, payment: .alipay),
+        .init(id: "jdbaitiao", label: "京东白条", name: "京东白条还款", price: 500,
+              currency: .CNY, cycle: .monthly, category: .other, brand: .jdBaitiao, payment: .other),
         .init(id: "applemusic", label: "Apple Music", name: "Apple Music", price: 11,
               currency: .CNY, cycle: .monthly, category: .media, brand: .appleMusic, payment: .appleID),
-        .init(id: "icloud", label: "iCloud+", name: "iCloud+", price: 21,
-              currency: .CNY, cycle: .monthly, category: .cloud, brand: .apple, payment: .appleID),
+        .init(id: "icloud", label: "iCloud", name: "iCloud+", price: 21,
+              currency: .CNY, cycle: .monthly, category: .cloud, brand: .icloud, payment: .appleID),
+        .init(id: "bilibili", label: "哔哩哔哩", name: "哔哩哔哩大会员", price: 25,
+              currency: .CNY, cycle: .monthly, category: .media, brand: .bilibili, payment: .alipay),
+        .init(id: "baidu", label: "百度网盘", name: "百度网盘SVIP", price: 25,
+              currency: .CNY, cycle: .monthly, category: .cloud, brand: .baiduNetdisk, payment: .alipay),
+        .init(id: "chatgpt", label: "ChatGPT", name: "ChatGPT Plus", price: 20,
+              currency: .USD, cycle: .monthly, category: .ai, brand: .openai, payment: .visa),
         .init(id: "claude", label: "Claude", name: "Claude Pro", price: 20,
               currency: .USD, cycle: .monthly, category: .ai, brand: .claude, payment: .visa),
-        .init(id: "deepseek", label: "DeepSeek", name: "DeepSeek", price: 20,
-              currency: .CNY, cycle: .monthly, category: .ai, brand: .deepseek, payment: .alipay),
     ]
 }

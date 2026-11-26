@@ -93,6 +93,12 @@ enum BrandIcon: String, CaseIterable, Identifiable {
     case appleMusic = "brand-apple-music"
     case claude = "brand-claude"
     case deepseek = "brand-deepseek"
+    case icloud = "brand-icloud"
+    case qqMusic = "brand-qq-music"
+    case neteaseMusic = "brand-netease-music"
+    case jdBaitiao = "brand-jd-baitiao"
+    case bilibili = "brand-bilibili"
+    case baiduNetdisk = "brand-baidu-netdisk"
     case generic
 
     var id: String { rawValue }
@@ -121,6 +127,7 @@ struct BrandLogo: View {
                 .interpolation(.high)
                 .scaledToFit()
                 .frame(width: size, height: size)
+                .clipShape(RoundedRectangle(cornerRadius: size * 0.22, style: .continuous))
         }
     }
 }

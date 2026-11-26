@@ -1,99 +1,138 @@
 import SwiftUI
 import UIKit
 
-/// 底栏：系统 `UISegmentedControl` 承载，iOS 26 的液态玻璃镜片由系统绘制。
-/// 高度通过子类化 `intrinsicContentSize` 抬到 58pt，图标同步加大。
+/// 底栏：100% 纯 SwiftUI 全液态玻璃胶囊，告别 UIKit UISegmentedControl 桥接与实心底板卡顿。
+/// iOS 26 走系统 `GlassEffectContainer` + 流体 `glassEffectID` 镜片；iOS 17–25 走 `.ultraThinMaterial` + 流体镜片。
 struct GlassTabBar: View {
     @Environment(\.colorScheme) private var colorScheme
     @Binding var selection: AppTab
 
-    var body: some View {
-        ZStack {
-            // 实心底板：内容不再透过底栏（系统镜片只在本板之上做镜面/高光）
-            Capsule(style: .continuous)
-                .fill(Theme.surface)
-                .overlay(
-                    Capsule(style: .continuous)
-                        .strokeBorder(
-                            colorScheme == .dark ? Color.white.opacity(0.09) : Color.white.opacity(0.9),
-                            lineWidth: 0.5
-                        )
-                )
-                .shadow(
-                    color: Color.black.opacity(colorScheme == .dark ? 0.30 : 0.06),
-                    radius: 12,
-                    y: 4
-                )
+    @Namespace private var tabNS
+    @State private var dragIndex: Int?
 
-            SegmentedTabBar(selection: $selection)
+    private var tabs: [AppTab] { AppTab.visible }
+    private var activeIndex: Int {
+        if let dragIndex { return dragIndex }
+        return tabs.firstIndex(of: selection) ?? 0
+    }
+
+    var body: some View {
+        Group {
+            if #available(iOS 26.0, *) {
+                liquidGlass26
+            } else {
+                liquidGlassLegacy
+            }
         }
         .frame(height: 58)
         .padding(.horizontal, 16)
         .padding(.bottom, 6)
     }
-}
 
-// MARK: - UIKit 桥
-
-private final class TallSegmentedControl: UISegmentedControl {
-    override var intrinsicContentSize: CGSize {
-        CGSize(width: UIView.noIntrinsicMetric, height: 58)
-    }
-}
-
-private struct SegmentedTabBar: UIViewRepresentable {
-    @Binding var selection: AppTab
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(selection: $selection)
-    }
-
-    func makeUIView(context: Context) -> UISegmentedControl {
-        let images = AppTab.visible.map { tab in
-            Self.tabBarImage(tab.reicon)
-        }
-        let control = TallSegmentedControl(items: images)
-        control.apportionsSegmentWidthsByContent = false
-        control.selectedSegmentIndex = AppTab.visible.firstIndex(of: selection) ?? 0
-        control.addTarget(context.coordinator, action: #selector(Coordinator.valueChanged(_:)), for: .valueChanged)
-        control.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        control.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        control.accessibilityLabel = "主导航"
-        return control
-    }
-
-    /// Reicon 模板矢量 → 22pt 渲染图（UISegmentedControl 用）
-    static func tabBarImage(_ icon: Reicon) -> UIImage {
-        let target = CGSize(width: 22, height: 22)
-        guard let base = UIImage(named: icon.rawValue)?.withRenderingMode(.alwaysTemplate) else {
-            return UIImage().withRenderingMode(.alwaysTemplate)
-        }
-        let renderer = UIGraphicsImageRenderer(size: target)
-        return renderer.image { _ in
-            base.draw(in: CGRect(origin: .zero, size: target))
-        }
-        .withRenderingMode(.alwaysTemplate)
-    }
-
-    func updateUIView(_ control: UISegmentedControl, context: Context) {
-        let index = AppTab.visible.firstIndex(of: selection) ?? 0
-        if control.selectedSegmentIndex != index {
-            control.selectedSegmentIndex = index
+    @available(iOS 26.0, *)
+    private var liquidGlass26: some View {
+        GlassEffectContainer(spacing: 0) {
+            tabButtons(useNativeGlassLens: true)
+                .padding(5)
+                .glassEffect(.regular.interactive(), in: Capsule())
         }
     }
 
-    final class Coordinator: NSObject {
-        private let selection: Binding<AppTab>
+    private var liquidGlassLegacy: some View {
+        tabButtons(useNativeGlassLens: false)
+            .padding(5)
+            .background(Capsule(style: .continuous).fill(.ultraThinMaterial))
+            .overlay(
+                Capsule(style: .continuous)
+                    .strokeBorder(
+                        Color.white.opacity(colorScheme == .dark ? 0.18 : 0.72),
+                        lineWidth: 0.6
+                    )
+            )
+            .shadow(
+                color: Color.black.opacity(colorScheme == .dark ? 0.36 : 0.08),
+                radius: 16,
+                y: 6
+            )
+    }
 
-        init(selection: Binding<AppTab>) {
-            self.selection = selection
+    @ViewBuilder
+    private func tabButtons(useNativeGlassLens: Bool) -> some View {
+        GeometryReader { geo in
+            let count = max(1, tabs.count)
+            let slotWidth = geo.size.width / CGFloat(count)
+
+            HStack(spacing: 0) {
+                ForEach(Array(tabs.enumerated()), id: \.element.id) { index, item in
+                    let isSelected = activeIndex == index
+                    Button {
+                        select(index: index)
+                    } label: {
+                        ZStack {
+                            if isSelected {
+                                lensView(useNativeGlassLens: useNativeGlassLens)
+                            }
+                            ReiconIcon(icon: item.reicon, size: 21)
+                                .foregroundStyle(isSelected ? Theme.brand : Theme.textSecondary)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .contentShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(item.title)
+                }
+            }
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 12)
+                    .onChanged { value in
+                        guard abs(value.translation.width) > abs(value.translation.height) else { return }
+                        let raw = Int(floor(value.location.x / max(1, slotWidth)))
+                        let clamped = min(count - 1, max(0, raw))
+                        if dragIndex != clamped {
+                            UISelectionFeedbackGenerator().selectionChanged()
+                            withAnimation(.spring(response: 0.30, dampingFraction: 0.82)) {
+                                dragIndex = clamped
+                            }
+                        }
+                    }
+                    .onEnded { _ in
+                        if let finalIndex = dragIndex {
+                            select(index: finalIndex)
+                        }
+                        dragIndex = nil
+                    }
+            )
         }
+    }
 
-        @objc func valueChanged(_ sender: UISegmentedControl) {
-            let cases = AppTab.visible
-            let index = sender.selectedSegmentIndex
-            guard index >= 0, index < cases.count else { return }
-            selection.wrappedValue = cases[index]
+    @ViewBuilder
+    private func lensView(useNativeGlassLens: Bool) -> some View {
+        if #available(iOS 26.0, *), useNativeGlassLens {
+            Capsule()
+                .fill(Color.clear)
+                .glassEffect(.regular.interactive(), in: Capsule())
+                .glassEffectID("tabLens", in: tabNS)
+        } else {
+            Capsule()
+                .fill(Color.primary.opacity(colorScheme == .dark ? 0.14 : 0.08))
+                .overlay(
+                    Capsule()
+                        .strokeBorder(
+                            Color.white.opacity(colorScheme == .dark ? 0.18 : 0.68),
+                            lineWidth: 0.5
+                        )
+                )
+                .matchedGeometryEffect(id: "tabLens", in: tabNS)
+        }
+    }
+
+    private func select(index: Int) {
+        guard tabs.indices.contains(index) else { return }
+        let target = tabs[index]
+        guard selection != target else { return }
+        UISelectionFeedbackGenerator().selectionChanged()
+        withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
+            selection = target
         }
     }
 }

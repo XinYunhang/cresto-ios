@@ -1,0 +1,12 @@
+﻿{
+  "images" : [
+    {
+      "filename" : "brand-jd-baitiao.png",
+      "idiom" : "universal"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}

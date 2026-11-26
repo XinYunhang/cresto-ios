@@ -2,6 +2,11 @@ import SwiftUI
 import SwiftData
 import UIKit
 
+private struct CountdownStripEditorContext: Identifiable {
+    let id = UUID()
+    let item: CountdownItem?
+}
+
 struct TasksView: View {
     @Environment(\.modelContext) private var context
 
@@ -17,10 +22,13 @@ struct TasksView: View {
     )
     private var doneTasks: [TaskItem]
 
+    @Query(sort: \CountdownItem.targetDate) private var countdowns: [CountdownItem]
+
     var onAdd: () -> Void = {}
 
     @State private var editing: TaskItem?
     @State private var isEditorPresented = false
+    @State private var countdownEditorContext: CountdownStripEditorContext?
     @State private var showCompleted = false
     /// 当前左滑展开的行（同一时间最多一条）
     @State private var swipedID: UUID?
@@ -44,6 +52,8 @@ struct TasksView: View {
             VStack(spacing: Theme.cardGap) {
                 header
 
+                countdownSection
+
                 if openTasks.isEmpty {
                     emptyState
                 }
@@ -55,9 +65,6 @@ struct TasksView: View {
                 }
 
                 completedSection
-
-                // 阅读卡片：列表最底部（悬浮 FAB 与底部胶囊上方安全区内）
-                ReadingCardView()
             }
             .padding(.horizontal, Theme.screenPadding)
             .padding(.bottom, Theme.bottomScrollInset)
@@ -75,6 +82,119 @@ struct TasksView: View {
         .sheet(isPresented: $isEditorPresented, onDismiss: { editing = nil }) {
             TaskEditor(task: editing)
         }
+        .sheet(item: $countdownEditorContext) { ctx in
+            CountdownEditor(item: ctx.item)
+        }
+    }
+
+    // MARK: 倒数日长条卡片区（支持多条任意日期）
+
+    private var countdownSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Text("倒数日")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(Theme.textTertiary)
+                if !countdowns.isEmpty {
+                    Text("\(countdowns.count)")
+                        .font(.system(size: 11.5, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(Theme.textTertiary.opacity(0.65))
+                }
+                Spacer()
+                Button {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    countdownEditorContext = CountdownStripEditorContext(item: nil)
+                } label: {
+                    HStack(spacing: 3) {
+                        ReiconIcon(icon: .add, size: 11)
+                        Text("添加")
+                    }
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Theme.brand)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 4)
+                    .background(Capsule().fill(Theme.brandSoft))
+                }
+                .buttonStyle(.plain)
+            }
+
+            if countdowns.isEmpty {
+                Button {
+                    countdownEditorContext = CountdownStripEditorContext(item: nil)
+                } label: {
+                    HStack(spacing: 10) {
+                        RoundedRectangle(cornerRadius: 2, style: .continuous)
+                            .fill(Theme.brand.opacity(0.45))
+                            .frame(width: 3.5, height: 22)
+                        Text("添加倒数日（支持任意日期）")
+                            .font(.system(size: 13))
+                            .foregroundStyle(Theme.textSecondary)
+                        Spacer()
+                        ReiconIcon(icon: .add, size: 14)
+                            .foregroundStyle(Theme.brand)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .cardElevation(radius: AppRadius.item)
+                }
+                .buttonStyle(PressableStyle())
+            } else {
+                ForEach(countdowns) { item in
+                    countdownStripCard(item)
+                }
+            }
+        }
+    }
+
+    private func countdownStripCard(_ item: CountdownItem) -> some View {
+        let days = item.daysRemaining()
+        let unitText = days > 0 ? "天后" : (days == 0 ? "今天" : "天前")
+
+        return Button {
+            countdownEditorContext = CountdownStripEditorContext(item: item)
+        } label: {
+            HStack(spacing: 12) {
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .fill(item.accent.color)
+                    .frame(width: 3.5, height: 28)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(item.title)
+                        .font(.system(size: 14.5, weight: .semibold))
+                        .foregroundStyle(Theme.text)
+                        .lineLimit(1)
+                    Text(item.targetDateText)
+                        .font(.system(size: 11, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(Theme.textTertiary)
+                }
+
+                Spacer(minLength: 8)
+
+                if days == 0 {
+                    Text("今天")
+                        .font(.system(size: 18, weight: .bold, design: .rounded))
+                        .foregroundStyle(item.accent.color)
+                } else {
+                    HStack(alignment: .lastTextBaseline, spacing: 2) {
+                        Text("\(abs(days))")
+                            .font(.system(size: 24, weight: .bold, design: .rounded))
+                            .monospacedDigit()
+                            .foregroundStyle(item.accent.color)
+                        Text(unitText)
+                            .font(.system(size: 11))
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 11)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .cardElevation(radius: AppRadius.item)
+        }
+        .buttonStyle(PressableStyle())
     }
 
     // MARK: 页头（标题 + 镂空进度环）
@@ -99,7 +219,7 @@ struct TasksView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
                 Text(group.title).font(.system(size: 11.5))
-                Text("\(tasks.count)").font(.system(size: 11.5)).monospacedDigit().opacity(0.6)
+                Text("\(tasks.count)").font(.system(size: 11.5, design: .rounded)).monospacedDigit().opacity(0.6)
                 Spacer()
                 if group == .overdue {
                     ReiconIcon(icon: .clock, size: 13)
@@ -225,7 +345,7 @@ struct TodayProgressRing: View {
     /// 轻量胶囊浮层：ultraThinMaterial 底 + blur 8→0 渐显、轻微横移弹簧入场
     private var detailPopup: some View {
         Text("已完成 \(done) / \(total)")
-            .font(.system(size: 12, weight: .medium))
+            .font(.system(size: 12, weight: .medium, design: .rounded))
             .monospacedDigit()
             .foregroundStyle(Theme.text)
             .padding(.horizontal, 12)

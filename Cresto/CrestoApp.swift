@@ -18,7 +18,8 @@ struct CrestoApp: App {
                 DeepSeekState.self,
                 WeReadDay.self,
                 WeReadBook.self,
-                Subscription.self
+                Subscription.self,
+                CountdownItem.self
             )
         } catch {
             fatalError("SwiftData 容器创建失败：\(error)")

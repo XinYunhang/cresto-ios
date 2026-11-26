@@ -275,3 +275,37 @@ extension Theme {
         return CourseTone(bg: bg, fg: fg)
     }
 }
+
+// MARK: - 丝滑深浅主题切换
+
+enum ThemeTransition {
+    static func style(for mode: String) -> UIUserInterfaceStyle {
+        switch mode {
+        case "dark": return .dark
+        case "light": return .light
+        default: return .unspecified
+        }
+    }
+
+    @MainActor
+    static func apply(_ mode: String, animated: Bool = true) {
+        let target = style(for: mode)
+        let windows = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap { $0.windows }
+
+        for window in windows {
+            if animated {
+                UIView.transition(
+                    with: window,
+                    duration: 0.36,
+                    options: [.transitionCrossDissolve, .allowUserInteraction]
+                ) {
+                    window.overrideUserInterfaceStyle = target
+                }
+            } else {
+                window.overrideUserInterfaceStyle = target
+            }
+        }
+    }
+}

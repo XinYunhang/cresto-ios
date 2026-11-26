@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import UIKit
 
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
@@ -9,8 +10,11 @@ struct SettingsView: View {
     @Query private var courses: [Course]
     @Query private var usages: [DailyUsage]
     @Query private var subscriptions: [Subscription]
+    @Query private var countdowns: [CountdownItem]
 
     @AppStorage("appTheme") private var appTheme = "system"
+    @AppStorage("usdToCny") private var usdToCny = 7.25
+    @AppStorage("jpyToCny") private var jpyToCny = 0.048
 
     @State private var sizeText = "—"
     @State private var isBackupPresented = false
@@ -18,7 +22,6 @@ struct SettingsView: View {
     @State private var apiKeyDraft = ""
     @State private var deepseekStatus: String?
     @State private var isTestingKey = false
-
     @AppStorage("deepseekPollSeconds") private var deepseekPollSeconds = 300
 
     // 微信读书同步
@@ -26,6 +29,14 @@ struct SettingsView: View {
     @State private var wereadKeyDraft = ""
     @State private var wereadStatus: String?
     @State private var isTestingWeread = false
+
+    // 参考汇率编辑
+    @State private var editingRate: RateKind?
+    @State private var rateDraft = ""
+
+    private enum RateKind {
+        case usd, jpy
+    }
 
     private var versionText: String {
         let short = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.1.0"
@@ -35,17 +46,16 @@ struct SettingsView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
+            ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: Theme.cardGap) {
                     themeCard
-                    // DeepSeek 相关配置随 Feature Flag 隐藏（底层逻辑保留）
+                    dataGridCard
+                    exchangeRateCard
                     if FeatureFlags.enableDeepSeek {
                         deepseekCard
                     }
                     wereadCard
-                    dataCard
-                    backupCard
-                    logCard
+                    backupAndLogCard
                     aboutCard
                 }
                 .padding(.horizontal, Theme.screenPadding)
@@ -57,14 +67,37 @@ struct SettingsView: View {
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("完成") { dismiss() }
-                        .foregroundStyle(Theme.text)
+                        .foregroundStyle(Theme.brand)
+                        .fontWeight(.medium)
                 }
             }
-            .tint(Theme.ink)
+            .tint(Theme.brand)
         }
         .presentationBackground(Theme.bg)
         .sheet(isPresented: $isBackupPresented) {
             BackupView()
+        }
+        .alert(editingRate == .jpy ? "100 JPY → CNY 参考汇率" : "1 USD → CNY 参考汇率", isPresented: Binding(
+            get: { editingRate != nil },
+            set: { if !$0 { editingRate = nil } }
+        )) {
+            TextField(editingRate == .jpy ? "4.80" : "7.25", text: $rateDraft)
+                .keyboardType(.decimalPad)
+            Button("保存") {
+                if let value = Double(rateDraft.replacingOccurrences(of: ",", with: ".")), value > 0 {
+                    if editingRate == .usd {
+                        usdToCny = value
+                    } else if editingRate == .jpy {
+                        jpyToCny = value / 100.0
+                    }
+                }
+                editingRate = nil
+            }
+            Button("取消", role: .cancel) { editingRate = nil }
+        } message: {
+            Text(editingRate == .jpy
+                 ? "当前 100 JPY = \(String(format: "%.2f", jpyToCny * 100)) CNY"
+                 : "当前 1 USD = \(String(format: "%.2f", usdToCny)) CNY")
         }
         .onAppear {
             AppLog.info("打开设置页")
@@ -81,41 +114,317 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: 主题
+    // MARK: 外观（可视化三缩略卡片 + 丝滑窗口溶解）
 
     private var themeCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("外观").cardLabel()
-            HStack(spacing: 6) {
-                themeButton("跟随系统", value: "system")
-                themeButton("深色", value: "dark")
-                themeButton("浅色", value: "light")
+            HStack {
+                Text("外观").cardLabel()
+                Spacer()
+                Text("丝滑切换")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(Theme.textTertiary)
+            }
+
+            HStack(spacing: 10) {
+                themePreviewTile("跟随系统", value: "system", style: .auto)
+                themePreviewTile("浅色", value: "light", style: .light)
+                themePreviewTile("深色", value: "dark", style: .dark)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .cardSurface()
     }
 
-    private func themeButton(_ title: String, value: String) -> some View {
+    private enum PreviewStyle { case auto, light, dark }
+
+    private func themePreviewTile(_ title: String, value: String, style: PreviewStyle) -> some View {
         let isOn = appTheme == value
         return Button {
+            guard appTheme != value else { return }
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
             appTheme = value
+            ThemeTransition.apply(value, animated: true)
             AppLog.info("切换主题：\(value)")
         } label: {
-            Text(title)
-                .font(.system(size: 12.5))
-                .foregroundStyle(isOn ? Theme.bg : Theme.textSecondary)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 8)
-                .background(
+            VStack(spacing: 7) {
+                ZStack {
+                    switch style {
+                    case .light:
+                        miniPhoneMockup(bg: Color(hex: 0xF2F3F7), card: Color.white, accent: Color(hex: 0x3B5BDB))
+                    case .dark:
+                        miniPhoneMockup(bg: Color(hex: 0x0E1015), card: Color(hex: 0x171A22), accent: Color(hex: 0x6B8AFF))
+                    case .auto:
+                        HStack(spacing: 0) {
+                            miniPhoneMockup(bg: Color(hex: 0xF2F3F7), card: Color.white, accent: Color(hex: 0x3B5BDB))
+                                .frame(maxWidth: .infinity)
+                                .clipped()
+                            miniPhoneMockup(bg: Color(hex: 0x0E1015), card: Color(hex: 0x171A22), accent: Color(hex: 0x6B8AFF))
+                                .frame(maxWidth: .infinity)
+                                .clipped()
+                        }
+                    }
+                }
+                .frame(height: 54)
+                .clipShape(RoundedRectangle(cornerRadius: AppRadius.control, style: .continuous))
+                .overlay(
                     RoundedRectangle(cornerRadius: AppRadius.control, style: .continuous)
-                        .fill(isOn ? Theme.text : Theme.surfaceRaised)
+                        .strokeBorder(isOn ? Theme.brand : Theme.stroke, lineWidth: isOn ? 2 : 0.6)
                 )
+
+                Text(title)
+                    .font(.system(size: 11.5, weight: isOn ? .semibold : .regular))
+                    .foregroundStyle(isOn ? Theme.brand : Theme.textSecondary)
+            }
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressableStyle())
     }
 
-    // MARK: DeepSeek
+    private func miniPhoneMockup(bg: Color, card: Color, accent: Color) -> some View {
+        ZStack(alignment: .topLeading) {
+            bg
+            VStack(alignment: .leading, spacing: 5) {
+                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                    .fill(accent)
+                    .frame(width: 18, height: 4)
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .fill(card)
+                    .frame(height: 16)
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .fill(card)
+                    .frame(height: 12)
+            }
+            .padding(7)
+        }
+    }
+
+    // MARK: 数据概览（2×2 紧凑格 + 圆体数字）
+
+    private var dataGridCard: some View {
+        let activeTasks = tasks.filter { $0.deletedAt == nil }.count
+        return VStack(alignment: .leading, spacing: 10) {
+            Text("数据概览").cardLabel()
+
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
+                statTile("待办", value: "\(activeTasks)", unit: "条", icon: .checkCircle)
+                statTile("课程", value: "\(courses.count)", unit: "门", icon: .calendarDays)
+                statTile("订阅", value: "\(subscriptions.count)", unit: "项", icon: .card)
+                statTile("倒数 / 使用", value: "\(countdowns.count)/\(usages.count)", unit: "项·天", icon: .clock)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .cardSurface()
+    }
+
+    private func statTile(_ title: String, value: String, unit: String, icon: Reicon) -> some View {
+        HStack(spacing: 10) {
+            ReiconIcon(icon: icon, size: 15)
+                .foregroundStyle(Theme.brand)
+                .frame(width: 30, height: 30)
+                .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Theme.brandSoft))
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.textTertiary)
+                HStack(alignment: .lastTextBaseline, spacing: 2) {
+                    Text(value)
+                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(Theme.text)
+                    Text(unit)
+                        .font(.system(size: 10))
+                        .foregroundStyle(Theme.textTertiary)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 11)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: AppRadius.item, style: .continuous)
+                .fill(Theme.surfaceRaised)
+        )
+    }
+
+    // MARK: 参考汇率（订阅详情折算用）
+
+    private var exchangeRateCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("参考汇率").cardLabel()
+                .padding(.bottom, 10)
+
+            Button {
+                rateDraft = String(format: "%.2f", usdToCny)
+                editingRate = .usd
+            } label: {
+                rateRow(label: "美元 (USD)", detail: "1 USD = \(String(format: "%.2f", usdToCny)) CNY")
+            }
+            .buttonStyle(.plain)
+
+            Rectangle().fill(Theme.stroke).frame(height: 0.5)
+
+            Button {
+                rateDraft = String(format: "%.2f", jpyToCny * 100)
+                editingRate = .jpy
+            } label: {
+                rateRow(label: "日元 (JPY)", detail: "100 JPY = \(String(format: "%.2f", jpyToCny * 100)) CNY")
+            }
+            .buttonStyle(.plain)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .cardSurface()
+    }
+
+    private func rateRow(label: String, detail: String) -> some View {
+        HStack {
+            Text(label)
+                .font(.system(size: 13.5))
+                .foregroundStyle(Theme.text)
+            Spacer()
+            Text(detail)
+                .font(.system(size: 12.5, weight: .medium, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(Theme.brand)
+            ReiconIcon(icon: .chevronRight, size: 12)
+                .foregroundStyle(Theme.textTertiary)
+        }
+        .frame(minHeight: 44)
+        .contentShape(Rectangle())
+    }
+
+    // MARK: 微信读书同步
+
+    private var wereadCard: some View {
+        VStack(alignment: .leading, spacing: 11) {
+            Text("微信读书同步").cardLabel()
+
+            TextField("https://i.weread.qq.com/api/agent/gateway", text: $wereadEndpoint)
+                .font(.system(size: 13))
+                .foregroundStyle(Theme.text)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+                .keyboardType(.URL)
+                .padding(.horizontal, 13)
+                .frame(height: 42)
+                .background(
+                    RoundedRectangle(cornerRadius: AppRadius.item, style: .continuous)
+                        .fill(Theme.surfaceRaised)
+                )
+
+            SecureField("wrk-...", text: $wereadKeyDraft)
+                .font(.system(size: 13))
+                .foregroundStyle(Theme.text)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+                .padding(.horizontal, 13)
+                .frame(height: 42)
+                .background(
+                    RoundedRectangle(cornerRadius: AppRadius.item, style: .continuous)
+                        .fill(Theme.surfaceRaised)
+                )
+
+            HStack(spacing: 8) {
+                capsuleButton("保存", filled: true, action: saveWeread)
+                capsuleButton(isTestingWeread ? "测试中…" : "测试连接", filled: false, action: testWeread)
+            }
+
+            if let wereadStatus {
+                Text(wereadStatus)
+                    .font(.system(size: 11.5))
+                    .lineSpacing(3)
+                    .foregroundStyle(Theme.textSecondary)
+            }
+
+            Text("Key 仅存本机钥匙串，不进仓库与日志；弱网自动回退本地缓存。")
+                .font(.system(size: 11))
+                .foregroundStyle(Theme.textTertiary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .cardSurface()
+    }
+
+    // MARK: 备份与日志（合并紧凑卡片）
+
+    private var backupAndLogCard: some View {
+        VStack(spacing: 0) {
+            Button {
+                isBackupPresented = true
+            } label: {
+                HStack(spacing: 11) {
+                    iconBadge(.refresh)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("备份与回退")
+                            .font(.system(size: 13.5, weight: .medium))
+                            .foregroundStyle(Theme.text)
+                        Text("每日自动快照，支持整体恢复")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Theme.textTertiary)
+                    }
+                    Spacer()
+                    ReiconIcon(icon: .chevronRight, size: 13)
+                        .foregroundStyle(Theme.textTertiary)
+                }
+                .padding(.vertical, 12)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            Rectangle().fill(Theme.stroke).frame(height: 0.5).padding(.leading, 43)
+
+            ShareLink(item: AppLog.fileURL) {
+                HStack(spacing: 11) {
+                    iconBadge(.share)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("导出运行日志")
+                            .font(.system(size: 13.5, weight: .medium))
+                            .foregroundStyle(Theme.text)
+                        Text("cresto.log · \(sizeText)")
+                            .font(.system(size: 11, design: .rounded))
+                            .monospacedDigit()
+                            .foregroundStyle(Theme.textTertiary)
+                    }
+                    Spacer()
+                    ReiconIcon(icon: .chevronRight, size: 13)
+                        .foregroundStyle(Theme.textTertiary)
+                }
+                .padding(.vertical, 12)
+                .contentShape(Rectangle())
+            }
+
+            Rectangle().fill(Theme.stroke).frame(height: 0.5).padding(.leading, 43)
+
+            Button {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                AppLog.clear()
+                AppLog.info("日志已清空")
+                sizeText = AppLog.fileSizeText
+            } label: {
+                HStack(spacing: 11) {
+                    iconBadge(.trash, tint: Theme.textTertiary, bg: Theme.surfaceRaised)
+                    Text("清空日志")
+                        .font(.system(size: 13.5))
+                        .foregroundStyle(Theme.textSecondary)
+                    Spacer()
+                }
+                .padding(.vertical, 12)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+        .cardSurface(padding: 15)
+    }
+
+    private func iconBadge(_ icon: Reicon, tint: Color = Theme.brand, bg: Color = Theme.brandSoft) -> some View {
+        ReiconIcon(icon: icon, size: 15)
+            .foregroundStyle(tint)
+            .frame(width: 32, height: 32)
+            .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(bg))
+    }
+
+    // MARK: DeepSeek（仅 Flag 开启时展示）
 
     private var deepseekCard: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -154,10 +463,6 @@ struct SettingsView: View {
                     intervalButton("3 分", seconds: 180)
                     intervalButton("5 分", seconds: 300)
                 }
-                Text("每段间隔采样一次余额，差值记进当天消耗")
-                    .font(.system(size: 11))
-                    .lineSpacing(3)
-                    .foregroundStyle(Theme.textTertiary)
             }
 
             Link(destination: TariffRules.pricingURL) {
@@ -169,24 +474,37 @@ struct SettingsView: View {
                 .font(.system(size: 12))
                 .foregroundStyle(Theme.textSecondary)
             }
-
-            Text("Key 只存本机钥匙串，不进备份与日志；换机后重填一次。")
-                .font(.system(size: 11))
-                .lineSpacing(3)
-                .foregroundStyle(Theme.textTertiary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .cardSurface()
     }
 
+    // MARK: 关于
+
+    private var aboutCard: some View {
+        HStack {
+            Text("Cresto iOS · 个人自用版本")
+                .font(.system(size: 12))
+                .foregroundStyle(Theme.textTertiary)
+            Spacer()
+            Text(versionText)
+                .font(.system(size: 11.5, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(Theme.textTertiary)
+        }
+        .cardSurface(padding: 14)
+    }
+
+    // MARK: 辅助控件与动作
+
     private func capsuleButton(_ title: String, filled: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
                 .font(.system(size: 12.5, weight: .medium))
-                .foregroundStyle(filled ? Theme.bg : Theme.text)
+                .foregroundStyle(filled ? Color.white : Theme.text)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
-                .background(Capsule().fill(filled ? Theme.text : Theme.surfaceRaised))
+                .background(Capsule().fill(filled ? Theme.brand : Theme.surfaceRaised))
         }
         .buttonStyle(PressableStyle())
     }
@@ -199,12 +517,12 @@ struct SettingsView: View {
         } label: {
             Text(title)
                 .font(.system(size: 12.5))
-                .foregroundStyle(isOn ? Theme.bg : Theme.textSecondary)
+                .foregroundStyle(isOn ? Color.white : Theme.textSecondary)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 8)
                 .background(
                     RoundedRectangle(cornerRadius: AppRadius.control, style: .continuous)
-                        .fill(isOn ? Theme.text : Theme.surfaceRaised)
+                        .fill(isOn ? Theme.brand : Theme.surfaceRaised)
                 )
         }
         .buttonStyle(.plain)
@@ -240,65 +558,12 @@ struct SettingsView: View {
             defer { isTestingKey = false }
             do {
                 let info = try await DeepSeekService.shared.fetchBalance()
-                // 测试连接也是一次真实采样，差值一并落库
                 DeepSeekStore.record(info, in: modelContext)
                 deepseekStatus = "✓ 连接正常 · 余额 \(info.currencySymbol)\(info.totalText)"
             } catch {
                 deepseekStatus = "✗ \(error.localizedDescription)"
             }
         }
-    }
-
-    // MARK: 微信读书同步
-
-    private var wereadCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("微信读书同步").cardLabel()
-
-            TextField("https://i.weread.qq.com/api/agent/gateway", text: $wereadEndpoint)
-                .font(.system(size: 13.5))
-                .foregroundStyle(Theme.text)
-                .autocorrectionDisabled()
-                .textInputAutocapitalization(.never)
-                .keyboardType(.URL)
-                .padding(.horizontal, 14)
-                .frame(height: 44)
-                .background(
-                    RoundedRectangle(cornerRadius: AppRadius.item, style: .continuous)
-                        .fill(Theme.surfaceRaised)
-                )
-
-            SecureField("wrk-...", text: $wereadKeyDraft)
-                .font(.system(size: 13.5))
-                .foregroundStyle(Theme.text)
-                .autocorrectionDisabled()
-                .textInputAutocapitalization(.never)
-                .padding(.horizontal, 14)
-                .frame(height: 44)
-                .background(
-                    RoundedRectangle(cornerRadius: AppRadius.item, style: .continuous)
-                        .fill(Theme.surfaceRaised)
-                )
-
-            HStack(spacing: 8) {
-                capsuleButton("保存", filled: true, action: saveWeread)
-                capsuleButton(isTestingWeread ? "测试中…" : "测试连接", filled: false, action: testWeread)
-            }
-
-            if let wereadStatus {
-                Text(wereadStatus)
-                    .font(.system(size: 11.5))
-                    .lineSpacing(3)
-                    .foregroundStyle(Theme.textSecondary)
-            }
-
-            Text("Key 只存本机钥匙串，不进仓库与日志；默认走官方 Agent Gateway（2s 超时，弱网自动回退本地缓存）。")
-                .font(.system(size: 11))
-                .lineSpacing(3)
-                .foregroundStyle(Theme.textTertiary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .cardSurface()
     }
 
     private func saveWeread() {
@@ -338,145 +603,5 @@ struct SettingsView: View {
                 wereadStatus = "✗ \(error.localizedDescription)"
             }
         }
-    }
-
-    // MARK: 数据
-
-    private var dataCard: some View {
-        VStack(spacing: 0) {
-            row("待办", "\(tasks.count) 条")
-            divider
-            row("课程", "\(courses.count) 门")
-            divider
-            row("使用记录", "\(usages.count) 天")
-            divider
-            row("订阅", "\(subscriptions.count) 项")
-        }
-        .cardSurface(padding: 0)
-    }
-
-    // MARK: 备份
-
-    private var backupCard: some View {
-        Button {
-            isBackupPresented = true
-        } label: {
-            HStack(spacing: 10) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("备份与回退")
-                        .font(.system(size: 13.5))
-                        .foregroundStyle(Theme.text)
-                    Text("每天自动存一份，可随时恢复")
-                        .font(.system(size: 11.5))
-                        .foregroundStyle(Theme.textTertiary)
-                }
-                Spacer()
-                ReiconIcon(icon: .chevronRight, size: 14.5)
-                    .foregroundStyle(Theme.textTertiary)
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .cardSurface()
-    }
-
-    // MARK: 日志
-
-    private var logCard: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("日志").cardLabel()
-                Spacer()
-                Text(sizeText)
-                    .font(.system(size: 11.5))
-                    .monospacedDigit()
-                    .foregroundStyle(Theme.textTertiary)
-            }
-            .padding(.bottom, 12)
-
-            Text("记录启动、切页、增删待办、课表导入这些动作，出问题时导出给我看就行。超过 512KB 会自动清空重来。")
-                .font(.system(size: 12))
-                .lineSpacing(4)
-                .foregroundStyle(Theme.textSecondary)
-                .padding(.bottom, 14)
-
-            ShareLink(item: AppLog.fileURL) {
-                HStack(spacing: 8) {
-                    ReiconIcon(icon: .share, size: 15.5)
-                    Text("导出日志")
-                    Spacer()
-                    Text("cresto.log")
-                        .font(.system(size: 11.5))
-                        .foregroundStyle(Theme.textTertiary)
-                }
-                .font(.system(size: 13.5))
-                .foregroundStyle(Theme.text)
-                .padding(.horizontal, 14)
-                .frame(height: 46)
-                .background(
-                    RoundedRectangle(cornerRadius: AppRadius.item, style: .continuous)
-                        .fill(Theme.surfaceRaised)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: AppRadius.item, style: .continuous)
-                        .strokeBorder(Theme.stroke, lineWidth: 1)
-                )
-            }
-
-            Button {
-                AppLog.clear()
-                AppLog.info("日志已清空")
-                sizeText = AppLog.fileSizeText
-            } label: {
-                HStack(spacing: 8) {
-                    ReiconIcon(icon: .trash, size: 15.5)
-                    Text("清空日志")
-                    Spacer()
-                }
-                .font(.system(size: 13))
-                .foregroundStyle(Theme.textTertiary)
-                .padding(.horizontal, 14)
-                .frame(height: 42)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .padding(.top, 8)
-        }
-        .cardSurface()
-    }
-
-    // MARK: 关于
-
-    private var aboutCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("关于").cardLabel()
-                Spacer()
-                Text(versionText)
-                    .font(.system(size: 11.5))
-                    .monospacedDigit()
-                    .foregroundStyle(Theme.textTertiary)
-            }
-            Text("Cresto iOS · 个人自用版本，不对外分发。")
-                .font(.system(size: 11.5))
-                .lineSpacing(4)
-                .foregroundStyle(Theme.textTertiary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .cardSurface()
-    }
-
-    private func row(_ label: String, _ value: String) -> some View {
-        HStack {
-            Text(label).font(.system(size: 13)).foregroundStyle(Theme.textSecondary)
-            Spacer()
-            Text(value).font(.system(size: 13, weight: .medium)).monospacedDigit().foregroundStyle(Theme.text)
-        }
-        .padding(.horizontal, 15)
-        .padding(.vertical, 11)
-    }
-
-    private var divider: some View {
-        Rectangle().fill(Theme.stroke).frame(height: 1)
     }
 }

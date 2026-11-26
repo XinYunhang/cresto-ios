@@ -2,6 +2,11 @@ import SwiftUI
 import SwiftData
 import UIKit
 
+private struct HomeCountdownEditorContext: Identifiable {
+    let id = UUID()
+    let item: CountdownItem?
+}
+
 struct OverviewView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.scenePhase) private var scenePhase
@@ -16,13 +21,11 @@ struct OverviewView: View {
     @Query(sort: \DailyUsage.dateKey) private var usages: [DailyUsage]
     @Query private var courses: [Course]
     @Query private var timetableSettings: [TimetableSettings]
-    @Query(sort: \WeReadDay.dateKey) private var readDays: [WeReadDay]
     @Query(sort: \Subscription.createdAt) private var subscriptions: [Subscription]
+    @Query(sort: \CountdownItem.targetDate) private var countdowns: [CountdownItem]
 
-    @AppStorage("countdownTitle") private var countdownTitle = ""
-    @AppStorage("countdownTimestamp") private var countdownTimestamp: Double = 0
     @AppStorage("usdToCny") private var usdToCny = 7.25
-    @AppStorage("subscriptionShowCNY") private var showCNY = true
+    @AppStorage("jpyToCny") private var jpyToCny = 0.048
 
     var onOpenTasks: () -> Void
     var onOpenCourse: () -> Void = {}
@@ -32,7 +35,7 @@ struct OverviewView: View {
 
     @State private var isSearchPresented = false
     @State private var isTimePresented = false
-    @State private var isCountdownEditorPresented = false
+    @State private var countdownEditorContext: HomeCountdownEditorContext?
     @State private var now = Date()
 
     private let ticker = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
@@ -61,10 +64,10 @@ struct OverviewView: View {
 
         ScrollView(.vertical, showsIndicators: false) {
             VStack(spacing: Theme.cardGap) {
-                topRow
-                greeting
+                header
                 searchField
                 bentoGrid(digest: digest)
+                ReadingCardView(compact: true)
                 todayFocusCard
                 if let urgentSub = imminentSubscription {
                     imminentSubBanner(urgentSub.sub, days: urgentSub.days)
@@ -86,12 +89,8 @@ struct OverviewView: View {
         .sheet(isPresented: $isTimePresented) {
             TimeDetailSheet()
         }
-        .sheet(isPresented: $isCountdownEditorPresented) {
-            CountdownEditorSheet(
-                title: $countdownTitle,
-                timestamp: $countdownTimestamp,
-                defaultDate: defaultCountdownDate
-            )
+        .sheet(item: $countdownEditorContext) { ctx in
+            CountdownEditor(item: ctx.item)
         }
         // 首页右下角 BLOUD 小黑球（与课表/待办 FAB 同锚点，52pt / 右 20 / 底 80）
         .overlay(alignment: .bottomTrailing) {
@@ -101,11 +100,19 @@ struct OverviewView: View {
         }
     }
 
-    // MARK: 顶部
+    // MARK: 顶部标题（与待办/订阅同位置规范对齐）
 
-    private var topRow: some View {
-        HStack {
-            Spacer()
+    private var header: some View {
+        HStack(alignment: .center, spacing: 10) {
+            Text("人，是会思考的芦苇")
+                .font(.system(size: 22, weight: .medium))
+                .tracking(-0.4)
+                .foregroundStyle(Theme.text)
+                .lineLimit(1)
+                .minimumScaleFactor(0.82)
+
+            Spacer(minLength: 6)
+
             Button(action: onOpenSettings) {
                 ReiconIcon(icon: .moreHorizontal, size: 20.5)
                     .foregroundStyle(Theme.text)
@@ -115,18 +122,9 @@ struct OverviewView: View {
             .buttonStyle(PressableStyle())
             .accessibilityLabel("设置")
         }
+        .padding(.horizontal, 2)
         .padding(.top, 2)
-        .padding(.bottom, 8)
-    }
-
-    private var greeting: some View {
-        Text(Greeting.text)
-            .font(.system(size: 27, weight: .medium))
-            .tracking(-0.5)
-            .foregroundStyle(Theme.text)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 2)
-            .padding(.bottom, 10)
+        .padding(.bottom, 6)
     }
 
     private var searchField: some View {
@@ -285,7 +283,7 @@ struct OverviewView: View {
                 .fill(isOngoing ? Color.white : tone.fg)
                 .frame(width: 5, height: 5)
             Text(label)
-                .font(.system(size: 10.5, weight: .semibold))
+                .font(.system(size: 10.5, weight: .semibold, design: .rounded))
                 .monospacedDigit()
         }
         .foregroundStyle(isOngoing ? Color.white : tone.fg)
@@ -301,9 +299,9 @@ struct OverviewView: View {
                 Text("\(focus.slot.startPeriod)-\(focus.slot.endPeriod) 节")
                 Spacer()
                 Text(focus.timeRangeText)
-                    .monospacedDigit()
             }
-            .font(.system(size: 11))
+            .font(.system(size: 11, design: .rounded))
+            .monospacedDigit()
             .foregroundStyle(Theme.textTertiary)
 
             if case .ongoing(let progress, _) = focus.status {
@@ -324,118 +322,115 @@ struct OverviewView: View {
         }
     }
 
-    // MARK: 右上 1×1 · 倒数日
+    // MARK: 右上 1×1 · 自定义多倒数日预览（绝不默认放假）
 
-    private var effectiveCountdownTitle: String {
-        let trimmed = countdownTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? "距期末" : trimmed
-    }
-
-    private var defaultCountdownDate: Date {
-        let calendar = Calendar.current
-        if let termStart = timetableSettings.first?.termStart {
-            return calendar.date(byAdding: .day, value: 18 * 7, to: calendar.startOfDay(for: termStart))
-                ?? calendar.startOfDay(for: now)
+    private var nearestCountdown: CountdownItem? {
+        if let upcoming = countdowns.first(where: { $0.daysRemaining(from: now) >= 0 }) {
+            return upcoming
         }
-        return calendar.date(byAdding: .day, value: 45, to: calendar.startOfDay(for: now))
-            ?? calendar.startOfDay(for: now)
-    }
-
-    private var targetCountdownDate: Date {
-        countdownTimestamp > 0 ? Date(timeIntervalSince1970: countdownTimestamp) : defaultCountdownDate
-    }
-
-    private var countdownDaysLeft: Int {
-        let calendar = Calendar.current
-        let start = calendar.startOfDay(for: now)
-        let end = calendar.startOfDay(for: targetCountdownDate)
-        return max(0, calendar.dateComponents([.day], from: start, to: end).day ?? 0)
+        return countdowns.last
     }
 
     private var countdownCard: some View {
-        let calendar = Calendar.current
-        let month = calendar.component(.month, from: targetCountdownDate)
-        let day = calendar.component(.day, from: targetCountdownDate)
+        let item = nearestCountdown
 
         return Button {
-            isCountdownEditorPresented = true
+            countdownEditorContext = HomeCountdownEditorContext(item: item)
         } label: {
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: 4) {
-                    Text(effectiveCountdownTitle)
-                        .font(.system(size: 11.5, weight: .medium))
-                        .foregroundStyle(Theme.textSecondary)
-                        .lineLimit(1)
-                    Spacer(minLength: 4)
-                    ReiconIcon(icon: .edit, size: 10.5)
+            if let item {
+                let days = item.daysRemaining(from: now)
+                let unitText = days > 0 ? "天后" : (days == 0 ? "今天" : "天前")
+
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(spacing: 4) {
+                        Text(item.title)
+                            .font(.system(size: 11.5, weight: .medium))
+                            .foregroundStyle(Theme.textSecondary)
+                            .lineLimit(1)
+                        Spacer(minLength: 4)
+                        ReiconIcon(icon: .edit, size: 10.5)
+                            .foregroundStyle(Theme.textTertiary)
+                    }
+
+                    Spacer(minLength: 2)
+
+                    if days == 0 {
+                        Text("今天")
+                            .font(.system(size: 26, weight: .bold, design: .rounded))
+                            .foregroundStyle(item.accent.color)
+                    } else {
+                        HStack(alignment: .firstTextBaseline, spacing: 3) {
+                            Text("\(abs(days))")
+                                .font(.system(size: 31, weight: .bold, design: .rounded))
+                                .monospacedDigit()
+                                .foregroundStyle(item.accent.color)
+                                .minimumScaleFactor(0.7)
+                                .lineLimit(1)
+                            Text(unitText)
+                                .font(.system(size: 11.5, weight: .medium))
+                                .foregroundStyle(Theme.textSecondary)
+                        }
+                    }
+
+                    Spacer(minLength: 2)
+
+                    Text(item.shortDateText)
+                        .font(.system(size: 10.5, design: .rounded))
+                        .monospacedDigit()
                         .foregroundStyle(Theme.textTertiary)
                 }
+                .padding(13)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .cardElevation(radius: AppRadius.card)
+            } else {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack {
+                        Text("倒数日")
+                            .font(.system(size: 11.5, weight: .medium))
+                            .foregroundStyle(Theme.textSecondary)
+                        Spacer()
+                        ReiconIcon(icon: .add, size: 13)
+                            .foregroundStyle(Theme.brand)
+                    }
 
-                Spacer(minLength: 2)
+                    Spacer()
 
-                HStack(alignment: .firstTextBaseline, spacing: 3) {
-                    Text("\(countdownDaysLeft)")
-                        .font(.system(size: 31, weight: .bold, design: .rounded))
-                        .monospacedDigit()
-                        .foregroundStyle(Theme.brand)
-                        .minimumScaleFactor(0.7)
-                        .lineLimit(1)
-                    Text("天")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Theme.textSecondary)
+                    Text("添加日期")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Theme.text)
+                    Text("任意目标日")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(Theme.textTertiary)
+                        .padding(.top, 2)
                 }
-
-                Spacer(minLength: 2)
-
-                Text("\(month)月\(day)日")
-                    .font(.system(size: 10.5))
-                    .monospacedDigit()
-                    .foregroundStyle(Theme.textTertiary)
+                .padding(13)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .cardElevation(radius: AppRadius.card)
             }
-            .padding(13)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .cardElevation(radius: AppRadius.card)
         }
         .buttonStyle(PressableStyle())
     }
 
-    // MARK: 右下 1×1 · 阅读 / 使用时长 7 天柱状图
+    // MARK: 右下 1×1 · 使用时长 7 天柱状图
 
     private func activityMiniCard(digest: UsageDigest) -> some View {
-        let readDigest = WeReadDigest.build(cached: readDays, endingAt: now)
-        let readSeven = Array(readDigest.days.suffix(7))
-        let totalRead = readSeven.reduce(0) { $0 + $1.minutes }
-        let useReading = totalRead > 0
-
-        let barValues: [Int] = useReading
-            ? readSeven.map(\.minutes)
-            : digest.lastSeven.map(\.minutes)
-        let peak = max(useReading ? 30 : 30, barValues.max() ?? 1)
-        let barColor = useReading ? WeReadHeat.green : Theme.brand
-
-        let headerTitle = useReading ? "阅读 · 7天" : "使用 · 7天"
-        let metricText: String = {
-            if useReading {
-                let todayMin = readSeven.last?.minutes ?? 0
-                return todayMin > 0 ? "今日 \(todayMin)m" : "共 \(totalRead)m"
-            }
-            return usageText(digest)
-        }()
+        let barValues = digest.lastSeven.map(\.minutes)
+        let peak = max(30, barValues.max() ?? 1)
 
         return Button {
             isTimePresented = true
         } label: {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Text(headerTitle)
+                    Text("使用 · 7天")
                         .font(.system(size: 11.5, weight: .medium))
                         .foregroundStyle(Theme.textSecondary)
                         .lineLimit(1)
                     Spacer(minLength: 2)
-                    Text(metricText)
-                        .font(.system(size: 11, weight: .semibold))
+                    Text(usageText(digest))
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
                         .monospacedDigit()
-                        .foregroundStyle(barColor)
+                        .foregroundStyle(Theme.brand)
                         .lineLimit(1)
                 }
 
@@ -451,7 +446,7 @@ struct OverviewView: View {
                             .fill(
                                 value == 0
                                     ? Theme.surfaceWell
-                                    : (isToday ? barColor : barColor.opacity(0.48))
+                                    : (isToday ? Theme.brand : Theme.brand.opacity(0.48))
                             )
                             .frame(maxWidth: .infinity)
                             .frame(height: barHeight)
@@ -502,7 +497,7 @@ struct OverviewView: View {
                 if progress.total > 0 {
                     let allDone = progress.done == progress.total
                     Text(allDone ? "已完成" : "\(progress.done)/\(progress.total)")
-                        .font(.system(size: 10.5, weight: .semibold))
+                        .font(.system(size: 10.5, weight: .semibold, design: .rounded))
                         .monospacedDigit()
                         .foregroundStyle(allDone ? WeReadHeat.green : Theme.brand)
                         .padding(.horizontal, 8)
@@ -587,12 +582,6 @@ struct OverviewView: View {
             if days == 1 { return "明天扣款" }
             return "剩 \(days) 天扣款"
         }()
-        let priceText: String = {
-            if showCNY, sub.currency == .USD {
-                return "≈ ¥\(String(format: "%.0f", sub.cny(rate: usdToCny)))"
-            }
-            return sub.displayPrice
-        }()
 
         return Button(action: onOpenSubscriptions) {
             HStack(spacing: 10) {
@@ -600,7 +589,7 @@ struct OverviewView: View {
                     .fill(accent)
                     .frame(width: 3, height: 22)
 
-                BrandLogo(brand: sub.brand, size: 20)
+                BrandLogo(brand: sub.brand, size: 22)
 
                 Text(sub.name)
                     .font(.system(size: 13.5, weight: .medium))
@@ -608,14 +597,14 @@ struct OverviewView: View {
                     .lineLimit(1)
 
                 Text("· \(dueText)")
-                    .font(.system(size: 11.5, weight: .medium))
+                    .font(.system(size: 11.5, weight: .medium, design: .rounded))
                     .foregroundStyle(accent)
                     .lineLimit(1)
 
                 Spacer(minLength: 6)
 
-                Text(priceText)
-                    .font(.system(size: 12, weight: .semibold))
+                Text(sub.displayPrice)
+                    .font(.system(size: 12.5, weight: .semibold, design: .rounded))
                     .monospacedDigit()
                     .foregroundStyle(Theme.textSecondary)
 
@@ -633,132 +622,6 @@ struct OverviewView: View {
     private func usageText(_ digest: UsageDigest) -> String {
         let minutes = digest.today?.minutes ?? 0
         return "\(minutes / 60)h \(String(format: "%02d", minutes % 60))m"
-    }
-}
-
-// MARK: - 倒数日编辑弹窗
-
-private struct CountdownEditorSheet: View {
-    @Environment(\.dismiss) private var dismiss
-
-    @Binding var title: String
-    @Binding var timestamp: Double
-    let defaultDate: Date
-
-    @State private var draftTitle = ""
-    @State private var draftDate = Date()
-
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: Theme.cardGap) {
-                    VStack(spacing: 0) {
-                        HStack {
-                            Text("标题")
-                                .font(.system(size: 13.5))
-                                .foregroundStyle(Theme.text)
-                            Spacer()
-                            TextField("距期末", text: $draftTitle)
-                                .font(.system(size: 13.5))
-                                .foregroundStyle(Theme.text)
-                                .multilineTextAlignment(.trailing)
-                        }
-                        .frame(minHeight: 50)
-
-                        Rectangle().fill(Theme.stroke).frame(height: 0.5)
-
-                        HStack {
-                            Text("目标日期")
-                                .font(.system(size: 13.5))
-                                .foregroundStyle(Theme.text)
-                            Spacer()
-                            DatePicker("", selection: $draftDate, displayedComponents: .date)
-                                .labelsHidden()
-                                .datePickerStyle(.compact)
-                                .environment(\.locale, Locale(identifier: "zh_CN"))
-                        }
-                        .frame(minHeight: 50)
-                    }
-                    .cardSurface()
-
-                    Button {
-                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                        title = draftTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-                        timestamp = Calendar.current.startOfDay(for: draftDate).timeIntervalSince1970
-                        dismiss()
-                    } label: {
-                        Text("保存倒数日")
-                            .font(.system(size: 14.5, weight: .semibold))
-                            .foregroundStyle(Color.white)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 48)
-                            .background(
-                                RoundedRectangle(cornerRadius: AppRadius.item, style: .continuous)
-                                    .fill(Theme.brand)
-                            )
-                    }
-                    .buttonStyle(PressableStyle())
-
-                    Button {
-                        title = ""
-                        timestamp = 0
-                        dismiss()
-                    } label: {
-                        Text("恢复默认（按学期推算）")
-                            .font(.system(size: 12.5))
-                            .foregroundStyle(Theme.textTertiary)
-                            .padding(.vertical, 8)
-                    }
-                    .buttonStyle(.plain)
-                }
-                .padding(.horizontal, Theme.screenPadding)
-                .padding(.vertical, 12)
-            }
-            .background(Theme.bg)
-            .navigationTitle("编辑倒数日")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button {
-                        dismiss()
-                    } label: {
-                        ReiconIcon(icon: .xmark, size: 11)
-                            .foregroundStyle(Theme.text)
-                            .frame(width: 28, height: 28)
-                            .background(Circle().fill(Theme.surfaceRaised))
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("关闭")
-                }
-            }
-        }
-        .presentationBackground(Theme.bg)
-        .onAppear {
-            draftTitle = title
-            draftDate = timestamp > 0 ? Date(timeIntervalSince1970: timestamp) : defaultDate
-        }
-    }
-}
-
-// MARK: - 问候
-
-enum Greeting {
-    static var text: String {
-        let hour = Calendar.current.component(.hour, from: Date())
-        let name = LocalProfile.displayName
-        let emoji: String
-        let words: String
-        switch hour {
-        case 5..<11:
-            words = "早上好！"; emoji = "🥱"
-        case 11..<14:
-            words = "中午好！"; emoji = "🫪"
-        case 14..<18:
-            words = "下午好！"; emoji = "☕️"
-        default:
-            words = "晚上好！"; emoji = "😪"
-        }
-        return "\(words)\(emoji) \(name)。"
     }
 }
 

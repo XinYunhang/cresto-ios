@@ -17,9 +17,11 @@ struct BackupFile: Codable {
     var wereadBook: WeReadBookDTO?
     /// v11 新增：订阅管理
     var subscriptions: [SubscriptionDTO]?
+    /// v15 新增：多倒数日（optional 兼容旧备份）
+    var countdowns: [CountdownDTO]?
 
     var totalItems: Int {
-        tasks.count + courses.count + usage.count + (deepseek?.count ?? 0) + (wereadDays?.count ?? 0) + (wereadBook == nil ? 0 : 1) + (subscriptions?.count ?? 0)
+        tasks.count + courses.count + usage.count + (deepseek?.count ?? 0) + (wereadDays?.count ?? 0) + (wereadBook == nil ? 0 : 1) + (subscriptions?.count ?? 0) + (countdowns?.count ?? 0)
     }
 
     struct TaskDTO: Codable {
@@ -118,6 +120,14 @@ struct BackupFile: Codable {
         var lastRemindedCycleKey: String
         var createdAt: Date
     }
+
+    struct CountdownDTO: Codable {
+        var id: UUID
+        var title: String
+        var targetDate: Date
+        var accentRaw: String
+        var createdAt: Date
+    }
 }
 
 // MARK: - 快照
@@ -178,6 +188,7 @@ enum BackupService {
         let wereadDays = (try? context.fetch(FetchDescriptor<WeReadDay>())) ?? []
         let wereadBook = (try? context.fetch(FetchDescriptor<WeReadBook>()))?.first
         let subscriptions = (try? context.fetch(FetchDescriptor<Subscription>())) ?? []
+        let countdowns = (try? context.fetch(FetchDescriptor<CountdownItem>())) ?? []
 
         return BackupFile(
             version: 1,
@@ -267,6 +278,15 @@ enum BackupService {
                     remindEnabled: $0.remindEnabled,
                     remindDaysBefore: $0.remindDaysBefore,
                     lastRemindedCycleKey: $0.lastRemindedCycleKey,
+                    createdAt: $0.createdAt
+                )
+            },
+            countdowns: countdowns.map {
+                BackupFile.CountdownDTO(
+                    id: $0.id,
+                    title: $0.title,
+                    targetDate: $0.targetDate,
+                    accentRaw: $0.accentRaw,
                     createdAt: $0.createdAt
                 )
             }
@@ -379,6 +399,7 @@ enum BackupService {
         for item in try context.fetch(FetchDescriptor<WeReadDay>()) { context.delete(item) }
         for item in try context.fetch(FetchDescriptor<WeReadBook>()) { context.delete(item) }
         for item in try context.fetch(FetchDescriptor<Subscription>()) { context.delete(item) }
+        for item in try context.fetch(FetchDescriptor<CountdownItem>()) { context.delete(item) }
 
         for dto in backup.tasks {
             let task = TaskItem(title: dto.title, notes: dto.notes)
@@ -480,6 +501,16 @@ enum BackupService {
             book.progress = dto.progress
             book.updatedAt = dto.updatedAt
             context.insert(book)
+        }
+        for dto in backup.countdowns ?? [] {
+            let item = CountdownItem(
+                title: dto.title,
+                targetDate: dto.targetDate,
+                accent: CountdownAccent(rawValue: dto.accentRaw) ?? .indigo
+            )
+            item.id = dto.id
+            item.createdAt = dto.createdAt
+            context.insert(item)
         }
 
         try context.save()

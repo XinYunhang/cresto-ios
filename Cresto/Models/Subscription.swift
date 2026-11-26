@@ -58,14 +58,15 @@ enum BillingCycle: String, Codable, CaseIterable, Identifiable {
 }
 
 enum SubscriptionCurrency: String, Codable, CaseIterable, Identifiable {
-    case USD, CNY
+    case CNY, USD, JPY
 
     var id: String { rawValue }
 
     var symbol: String {
         switch self {
-        case .USD: return "$"
         case .CNY: return "¥"
+        case .USD: return "$"
+        case .JPY: return "JP¥"
         }
     }
 
@@ -160,20 +161,48 @@ final class Subscription {
     var category: SubscriptionCategory { SubscriptionCategory(rawValue: categoryRaw) ?? .other }
     var brand: BrandIcon { BrandIcon.from(raw: brandRaw) }
 
-    var priceText: String { String(format: "%.2f", price) }
-    var displayPrice: String { "\(currency.symbol)\(priceText)" }
+    var priceText: String {
+        currency == .JPY ? String(format: "%.0f", price) : String(format: "%.2f", price)
+    }
+
+    var displayPrice: String {
+        if currency == .JPY {
+            let formatter = NumberFormatter()
+            formatter.numberStyle = .decimal
+            formatter.maximumFractionDigits = 0
+            let formatted = formatter.string(from: NSNumber(value: price)) ?? String(format: "%.0f", price)
+            return "\(currency.symbol)\(formatted)"
+        }
+        return "\(currency.symbol)\(priceText)"
+    }
 
     /// 折算月均（原币种）
     var monthlyEquivalent: Double { price * cycle.monthlyFactor }
 
     /// 折算月均（人民币）
-    func monthlyCNY(rate: Double) -> Double {
-        currency == .USD ? monthlyEquivalent * rate : monthlyEquivalent
+    func monthlyCNY(usdRate: Double, jpyRate: Double = 0.048) -> Double {
+        switch currency {
+        case .CNY: return monthlyEquivalent
+        case .USD: return monthlyEquivalent * usdRate
+        case .JPY: return monthlyEquivalent * jpyRate
+        }
     }
 
-    /// 原币 → 人民币（用于卡片 ≈ 行）
+    func monthlyCNY(rate: Double) -> Double {
+        monthlyCNY(usdRate: rate, jpyRate: 0.048)
+    }
+
+    /// 原币 → 人民币
+    func cny(usdRate: Double, jpyRate: Double = 0.048) -> Double {
+        switch currency {
+        case .CNY: return price
+        case .USD: return price * usdRate
+        case .JPY: return price * jpyRate
+        }
+    }
+
     func cny(rate: Double) -> Double {
-        currency == .USD ? price * rate : price
+        cny(usdRate: rate, jpyRate: 0.048)
     }
 }
 

@@ -65,15 +65,15 @@ struct RootView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            // 底边渐隐：内容与悬浮底栏之间 40pt 柔和过渡（非交互，深浅主题自适应）
+            // 轻柔底边微晕，让全液态玻璃底栏真实折射下方内容
             VStack(spacing: 0) {
                 Spacer()
                 LinearGradient(
-                    colors: [Theme.bg.opacity(0), Theme.bg],
+                    colors: [Theme.bg.opacity(0), Theme.bg.opacity(0.32)],
                     startPoint: .top,
                     endPoint: .bottom
                 )
-                .frame(height: 40)
+                .frame(height: 22)
             }
             .ignoresSafeArea(edges: .bottom)
             .allowsHitTesting(false)
@@ -87,12 +87,15 @@ struct RootView: View {
                 .zIndex(99)
             }
         }
-        .preferredColorScheme(colorScheme)
         .onChange(of: tab) { _, newTab in
             mountedTabs.insert(newTab)
         }
+        .onChange(of: appTheme) { _, newValue in
+            ThemeTransition.apply(newValue, animated: true)
+        }
         .onAppear {
             if activeSince == nil { activeSince = Date() }
+            ThemeTransition.apply(appTheme, animated: false)
             AppLog.info("App 启动 · 主题 \(appTheme)")
             syncSubscriptions()
         }
@@ -207,7 +210,7 @@ enum PreviewData {
         let container = try! ModelContainer(
             for: TaskItem.self, Subtask.self, Course.self, CourseSlot.self,
             TimetableSettings.self, DailyUsage.self, DeepSeekDay.self, DeepSeekState.self,
-            WeReadDay.self, WeReadBook.self, Subscription.self,
+            WeReadDay.self, WeReadBook.self, Subscription.self, CountdownItem.self,
             configurations: config
         )
         SeedData.seedIfNeeded(container.mainContext)

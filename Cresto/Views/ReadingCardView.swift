@@ -12,6 +12,8 @@ struct ReadingCardView: View {
     @Query(sort: \WeReadDay.dateKey) private var cachedDays: [WeReadDay]
     @Query private var books: [WeReadBook]
 
+    var compact: Bool = false
+
     @State private var phase: Phase = .skeleton
     @State private var selectedKey: String?
     @State private var isBookExpanded = false
@@ -34,6 +36,9 @@ struct ReadingCardView: View {
 
     private var book: WeReadBook? { books.first }
     private var digest: WeReadDigest { WeReadDigest.build(cached: cachedDays) }
+    private var visibleDays: [WeReadDigest.Day] {
+        compact ? Array(digest.days.suffix(14)) : digest.days
+    }
 
     var body: some View {
         Group {
@@ -109,7 +114,7 @@ struct ReadingCardView: View {
                 .buttonStyle(.plain)
             } else {
                 Text(trailing.text)
-                    .font(.system(size: 12, weight: trailing.emphasized ? .medium : .regular))
+                    .font(.system(size: 12, weight: trailing.emphasized ? .medium : .regular, design: .rounded))
                     .foregroundStyle(trailing.color)
                     .monospacedDigit()
                     .lineLimit(1)
@@ -118,20 +123,21 @@ struct ReadingCardView: View {
     }
 
     private var headerTrailing: (text: String, color: Color, emphasized: Bool) {
-        if let key = selectedKey, let day = digest.days.first(where: { $0.id == key }) {
+        if let key = selectedKey, let day = visibleDays.first(where: { $0.id == key }) {
             let label = Self.monthDayLabel(day.date)
             if day.minutes > 0 {
                 return ("\(label) · \(day.minutes)分钟", WeReadHeat.green, true)
             }
             return ("\(label) · 无阅读", Theme.textTertiary, false)
         }
-        return ("近 30 天", Theme.textTertiary, false)
+        return (compact ? "近 14 天" : "近 30 天", Theme.textTertiary, false)
     }
 
     private var heatmap: some View {
-        // 紧凑化：7 列不变、间距略收、格子由正方形改为扁比例（降低总高度，保持单手点按面积）
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 7), count: 7), spacing: 7) {
-            ForEach(digest.days) { day in
+        // 紧凑化：7 列不变、首页 compact 展示近 14 天（2 行）
+        let spacing: CGFloat = compact ? 6 : 7
+        return LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: spacing), count: 7), spacing: spacing) {
+            ForEach(visibleDays) { day in
                 heatCell(day)
             }
         }
@@ -230,7 +236,7 @@ struct ReadingCardView: View {
                         .lineLimit(1)
                     Spacer(minLength: 8)
                     Text("\(book.progressPercent)%")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
                         .foregroundStyle(WeReadHeat.green)
                         .monospacedDigit()
                 }
@@ -266,7 +272,7 @@ struct ReadingCardView: View {
                 coverPlaceholder
             }
         }
-        .frame(width: 64, height: 94)
+        .frame(width: compact ? 48 : 64, height: compact ? 70 : 94)
         .clipped()
         .overlay(Rectangle().strokeBorder(Theme.stroke, lineWidth: 0.5))
     }
@@ -282,7 +288,9 @@ struct ReadingCardView: View {
     // MARK: - 骨架屏（等尺寸轮廓 + 斜向扫光）
 
     private var skeletonBody: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        let spacing: CGFloat = compact ? 6 : 7
+        let cellCount = compact ? 14 : 30
+        return VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text("阅读")
                     .font(.system(size: 15, weight: .medium))
@@ -293,8 +301,8 @@ struct ReadingCardView: View {
                     .frame(width: 64, height: 14)
             }
 
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 7), count: 7), spacing: 7) {
-                ForEach(0..<30, id: \.self) { _ in
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: spacing), count: 7), spacing: spacing) {
+                ForEach(0..<cellCount, id: \.self) { _ in
                     RoundedRectangle(cornerRadius: AppRadius.grid, style: .continuous)
                         .fill(Theme.surfaceRaised)
                         .aspectRatio(1.22, contentMode: .fit)
