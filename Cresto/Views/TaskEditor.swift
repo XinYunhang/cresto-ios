@@ -28,7 +28,8 @@ struct TaskEditor: View {
         task: TaskItem? = nil,
         defaultDate: Date? = nil,
         defaultTitle: String = "",
-        defaultUrgency: TaskUrgency = .mild
+        defaultUrgency: TaskUrgency = .mild,
+        defaultTags: [String] = []
     ) {
         self.task = task
 
@@ -41,7 +42,7 @@ struct TaskEditor: View {
         _urgency = State(initialValue: task?.urgency ?? defaultUrgency)
         _reminder = State(initialValue: task?.reminder ?? .none)
         _repeatKind = State(initialValue: task?.repeatKind ?? .none)
-        _tags = State(initialValue: task?.tags ?? [])
+        _tags = State(initialValue: task?.tags ?? defaultTags)
         _drafts = State(
             initialValue: (task?.subtasks.sorted { $0.order < $1.order } ?? []).map {
                 DraftSubtask(title: $0.title, isDone: $0.isDone)
@@ -103,27 +104,50 @@ struct TaskEditor: View {
                 .padding(.vertical, 14)
 
             Rectangle()
-                .fill(Color.white.opacity(0.08))
+                .fill(Theme.stroke)
                 .frame(height: 0.5)
 
             VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    Text("紧急程度")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.textSecondary)
-                    Spacer()
-                    Text(urgency.title)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(urgency.tint)
-                        .animation(.snappy(duration: 0.2), value: urgency)
+                Text("紧急程度")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.textSecondary)
+
+                HStack(spacing: 8) {
+                    ForEach(TaskUrgency.allCases) { tier in
+                        let isOn = urgency == tier
+                        Button {
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            withAnimation(.snappy(duration: 0.2)) {
+                                urgency = tier
+                            }
+                        } label: {
+                            HStack(spacing: 6) {
+                                Circle()
+                                    .fill(tier.tint)
+                                    .frame(width: 8, height: 8)
+                                Text(tier.title)
+                                    .font(.system(size: 13, weight: isOn ? .semibold : .regular))
+                                    .foregroundStyle(isOn ? tier.tint : Theme.textSecondary)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 36)
+                            .background(
+                                RoundedRectangle(cornerRadius: AppRadius.control, style: .continuous)
+                                    .fill(isOn ? tier.tint.opacity(0.14) : Theme.surfaceRaised)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: AppRadius.control, style: .continuous)
+                                    .strokeBorder(isOn ? tier.tint.opacity(0.42) : Color.clear, lineWidth: 1)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
-                UrgencySlider(selection: $urgency)
             }
             .padding(.vertical, 12)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .cardSurface()
-        .clipShape(RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous))
     }
 
     // MARK: 时间
@@ -226,8 +250,8 @@ struct TaskEditor: View {
                 .foregroundStyle(Theme.textSecondary)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
-                .background(Capsule().fill(Color.white.opacity(0.05)))
-                .overlay(Capsule().strokeBorder(Theme.stroke, lineWidth: 1))
+                .background(Capsule().fill(Theme.surfaceRaised))
+                .overlay(Capsule().strokeBorder(Theme.stroke, lineWidth: 0.6))
         }
         .buttonStyle(.plain)
     }
@@ -334,8 +358,8 @@ struct TaskEditor: View {
                     ReiconIcon(icon: .add, size: 14.5)
                         .foregroundStyle(Theme.text)
                         .frame(width: 26, height: 26)
-                        .background(Circle().fill(Color.white.opacity(0.06)))
-                        .overlay(Circle().strokeBorder(Theme.stroke, lineWidth: 1))
+                        .background(Circle().fill(Theme.surfaceRaised))
+                        .overlay(Circle().strokeBorder(Theme.stroke, lineWidth: 0.6))
                 }
                 .buttonStyle(PressableStyle())
                 .accessibilityLabel("添加标签")
@@ -370,15 +394,15 @@ struct TaskEditor: View {
                 ReiconIcon(icon: .xmark, size: 9)
                     .foregroundStyle(Theme.textTertiary)
                     .frame(width: 13, height: 13)
-                    .background(Circle().fill(Color.white.opacity(0.10)))
+                    .background(Circle().fill(Theme.surface))
             }
             .buttonStyle(.plain)
             .accessibilityLabel("移除标签 \(tag)")
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 5)
-        .background(Capsule().fill(Color.white.opacity(0.06)))
-        .overlay(Capsule().strokeBorder(Theme.stroke, lineWidth: 1))
+        .background(Capsule().fill(Theme.surfaceRaised))
+        .overlay(Capsule().strokeBorder(Theme.stroke, lineWidth: 0.6))
     }
 
     /// 兼容中文输入法：拼音组合态不做实时截断，只在最终确认时校验，超长按字符截断到 5
@@ -397,8 +421,7 @@ struct TaskEditor: View {
     }
 
     private var divider: some View {
-        // 设计图：0.5pt 细分线，三行等距
-        Rectangle().fill(Color.white.opacity(0.08)).frame(height: 0.5)
+        Rectangle().fill(Theme.stroke).frame(height: 0.5)
     }
 
     // MARK: 子任务
@@ -424,11 +447,11 @@ struct TaskEditor: View {
                     } label: {
                         ZStack {
                             Circle()
-                                .strokeBorder(draft.isDone ? Color.clear : Color.white.opacity(0.26), lineWidth: 1.5)
+                                .strokeBorder(draft.isDone ? Color.clear : Theme.checkboxBorder, lineWidth: 1.5)
                             if draft.isDone {
-                                Circle().fill(Theme.ink)
+                                Circle().fill(Theme.brand)
                                 ReiconIcon(icon: .check, size: 10)
-                                    .foregroundStyle(Theme.bg)
+                                    .foregroundStyle(Color.white)
                             }
                         }
                         .frame(width: 19, height: 19)
@@ -492,17 +515,10 @@ struct TaskEditor: View {
         } label: {
             Text("删除待办")
                 .font(.system(size: 13.5))
-                .foregroundStyle(Theme.textSecondary)
+                .foregroundStyle(Color(hex: 0xEF4444))
                 .frame(maxWidth: .infinity)
                 .frame(height: 46)
-                .background(
-                    RoundedRectangle(cornerRadius: AppRadius.item, style: .continuous)
-                        .fill(Color.white.opacity(0.04))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: AppRadius.item, style: .continuous)
-                        .strokeBorder(Theme.stroke, lineWidth: 1)
-                )
+                .cardElevation(radius: AppRadius.item)
         }
         .buttonStyle(PressableStyle())
         .padding(.top, 4)

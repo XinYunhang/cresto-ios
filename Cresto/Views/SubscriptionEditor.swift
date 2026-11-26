@@ -2,10 +2,11 @@ import SwiftUI
 import SwiftData
 import UIKit
 
-/// 新增 / 编辑订阅弹窗（币种切换与 USD / JPY 汇率折算仅在此详情/添加页展示）。
+/// 新增 / 编辑订阅弹窗（参考图 1 主信息色块风格：删除快捷预设、可视化图标选择网格、支持自定义付款方式 + USD/JPY 折算）。
 struct SubscriptionEditor: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
 
     @AppStorage("usdToCny") private var usdToCny = 7.25
     @AppStorage("jpyToCny") private var jpyToCny = 0.048
@@ -18,13 +19,15 @@ struct SubscriptionEditor: View {
     @State private var currency: SubscriptionCurrency
     @State private var cycle: BillingCycle
     @State private var nextCharge: Date
-    @State private var payment: PaymentMethod
+    @State private var paymentTitle: String
     @State private var category: SubscriptionCategory
     @State private var brand: BrandIcon
     @State private var remindEnabled: Bool
     @State private var remindDays: Int
     @State private var validation: String?
 
+    @State private var isIconPickerPresented = false
+    @State private var isPaymentPickerPresented = false
     @State private var editingRateCurrency: SubscriptionCurrency?
     @State private var rateDraft = ""
 
@@ -37,7 +40,7 @@ struct SubscriptionEditor: View {
             _currency = State(initialValue: sub.currency)
             _cycle = State(initialValue: sub.cycle)
             _nextCharge = State(initialValue: sub.nextChargeDate)
-            _payment = State(initialValue: sub.payment)
+            _paymentTitle = State(initialValue: sub.paymentDisplayTitle)
             _category = State(initialValue: sub.category)
             _brand = State(initialValue: sub.brand)
             _remindEnabled = State(initialValue: sub.remindEnabled)
@@ -51,7 +54,7 @@ struct SubscriptionEditor: View {
             _nextCharge = State(initialValue: calendar.date(
                 byAdding: .month, value: 1, to: calendar.startOfDay(for: Date())
             ) ?? Date())
-            _payment = State(initialValue: preset.payment)
+            _paymentTitle = State(initialValue: preset.payment.title)
             _category = State(initialValue: preset.category)
             _brand = State(initialValue: preset.brand)
             _remindEnabled = State(initialValue: true)
@@ -65,7 +68,7 @@ struct SubscriptionEditor: View {
             _nextCharge = State(initialValue: calendar.date(
                 byAdding: .month, value: 1, to: calendar.startOfDay(for: Date())
             ) ?? Date())
-            _payment = State(initialValue: .alipay)
+            _paymentTitle = State(initialValue: PaymentMethod.applePay.title)
             _category = State(initialValue: .other)
             _brand = State(initialValue: .generic)
             _remindEnabled = State(initialValue: true)
@@ -77,11 +80,16 @@ struct SubscriptionEditor: View {
         Double(priceText.replacingOccurrences(of: ",", with: ".")) ?? 0
     }
 
+    private var formattedNextCharge: String {
+        let c = Calendar.current.dateComponents([.month, .day], from: nextCharge)
+        return "\(c.month ?? 1)月\(c.day ?? 1)日扣费"
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: Theme.cardGap) {
-                    presetBar
+                    heroSummaryCard
                     formCard
                     reminderCard
                     if let validation {
@@ -99,25 +107,29 @@ struct SubscriptionEditor: View {
                 .padding(.vertical, 12)
             }
             .background(Theme.bg)
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle(subscription == nil ? "添加订阅" : "订阅详情")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { dismiss() }
+                        .foregroundStyle(Theme.textSecondary)
+                }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button {
-                        dismiss()
-                    } label: {
-                        ReiconIcon(icon: .xmark, size: 11)
-                            .foregroundStyle(Theme.text)
-                            .frame(width: 28, height: 28)
-                            .background(Circle().fill(Theme.surfaceRaised))
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("关闭")
+                    Button("保存") { save() }
+                        .fontWeight(.semibold)
+                        .foregroundStyle(Theme.brand)
                 }
             }
             .tint(Theme.brand)
         }
         .presentationBackground(Theme.bg)
+        .sheet(isPresented: $isIconPickerPresented) {
+            BrandIconPickerSheet(selection: $brand)
+        }
+        .sheet(isPresented: $isPaymentPickerPresented) {
+            PaymentMethodPickerSheet(selection: $paymentTitle)
+        }
         .alert(rateAlertTitle, isPresented: Binding(
             get: { editingRateCurrency != nil },
             set: { if !$0 { editingRateCurrency = nil } }
@@ -134,12 +146,98 @@ struct SubscriptionEditor: View {
                 }
                 editingRateCurrency = nil
             }
-            Button("取消", role: .cancel) {
-                editingRateCurrency = nil
-            }
+            Button("取消", role: .cancel) { editingRateCurrency = nil }
         } message: {
             Text(rateAlertMessage)
         }
+    }
+
+    // MARK: 顶部主信息色块 Hero 卡（参考图 1）
+
+    private var heroSummaryCard: some View {
+        let tint = brand.tintColor
+        let bgAlpha = colorScheme == .dark ? 0.22 : 0.13
+        let pillAlpha = colorScheme == .dark ? 0.24 : 0.14
+        let displayTitle = name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? (brand == .generic ? "新建订阅" : brand.displayName)
+            : name
+        let displayAmount: String = {
+            guard parsedPrice > 0 else { return "\(currency.symbol)--" }
+            if currency == .JPY {
+                return "\(currency.symbol)\(String(format: "%.0f", parsedPrice))"
+            }
+            return "\(currency.symbol)\(String(format: "%.2f", parsedPrice))"
+        }()
+
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .center, spacing: 13) {
+                Button {
+                    isIconPickerPresented = true
+                } label: {
+                    ZStack(alignment: .bottomTrailing) {
+                        RoundedRectangle(cornerRadius: AppRadius.item, style: .continuous)
+                            .fill(Theme.surface)
+                            .frame(width: 52, height: 52)
+                            .overlay {
+                                BrandLogo(brand: brand, size: 34)
+                            }
+                        ReiconIcon(icon: .edit, size: 10)
+                            .foregroundStyle(Color.white)
+                            .frame(width: 18, height: 18)
+                            .background(Circle().fill(tint))
+                            .offset(x: 4, y: 4)
+                    }
+                }
+                .buttonStyle(PressableStyle())
+                .accessibilityLabel("选择订阅图标")
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(displayTitle)
+                        .font(.system(size: 19, weight: .bold))
+                        .foregroundStyle(Theme.text)
+                        .lineLimit(1)
+                    Text("\(paymentTitle) · \(formattedNextCharge)")
+                        .font(.system(size: 12, design: .rounded))
+                        .foregroundStyle(Theme.textSecondary)
+                }
+
+                Spacer(minLength: 6)
+
+                Text(displayAmount)
+                    .font(.system(size: 23, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(tint)
+            }
+
+            HStack(spacing: 7) {
+                heroPill(cycle.title, tint: tint, alpha: pillAlpha)
+                heroPill(currency.title, tint: tint, alpha: pillAlpha)
+                if (currency == .USD || currency == .JPY), parsedPrice > 0 {
+                    let cnyValue = parsedPrice * (currency == .USD ? usdToCny : jpyToCny)
+                    heroPill("≈ ¥\(String(format: "%.2f", cnyValue))", tint: tint, alpha: pillAlpha)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous)
+                .fill(tint.opacity(bgAlpha))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous)
+                .strokeBorder(tint.opacity(0.22), lineWidth: 0.7)
+        )
+    }
+
+    private func heroPill(_ text: String, tint: Color, alpha: Double) -> some View {
+        Text(text)
+            .font(.system(size: 11, weight: .semibold, design: .rounded))
+            .monospacedDigit()
+            .foregroundStyle(tint)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 4)
+            .background(Capsule().fill(tint.opacity(alpha)))
     }
 
     private var rateAlertTitle: String {
@@ -153,78 +251,38 @@ struct SubscriptionEditor: View {
         return "当前 1 USD = \(String(format: "%.2f", usdToCny)) CNY"
     }
 
-    // MARK: 预设胶囊
-
-    private var presetBar: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 7) {
-                ForEach(SubscriptionPreset.all) { preset in
-                    Button {
-                        apply(preset)
-                    } label: {
-                        HStack(spacing: 6) {
-                            BrandLogo(brand: preset.brand, size: 15)
-                            Text(preset.label)
-                                .font(.system(size: 12))
-                                .foregroundStyle(Theme.textSecondary)
-                        }
-                        .padding(.horizontal, 11)
-                        .padding(.vertical, 6)
-                        .background(Capsule().fill(Theme.surface))
-                        .overlay(Capsule().strokeBorder(Theme.stroke, lineWidth: 0.5))
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("使用 \(preset.label) 预设")
-                }
-            }
-            .padding(.vertical, 1)
-        }
-    }
-
-    private func apply(_ preset: SubscriptionPreset) {
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        withAnimation(.snappy(duration: 0.2)) {
-            name = preset.name
-            priceText = preset.currency == .JPY ? String(format: "%.0f", preset.price) : String(format: "%.2f", preset.price)
-            currency = preset.currency
-            cycle = preset.cycle
-            category = preset.category
-            brand = preset.brand
-            payment = preset.payment
-        }
-        validation = nil
-    }
-
     // MARK: 表单
 
     private var formCard: some View {
         VStack(spacing: 0) {
-            // 名称 + 可点击切换图标预览
-            formRow("名称") {
-                HStack(spacing: 8) {
-                    Menu {
-                        ForEach(BrandIcon.allCases) { icon in
-                            Button {
-                                brand = icon
-                            } label: {
-                                Label { Text(iconLabel(icon)) } icon: { BrandLogo(brand: icon, size: 16) }
-                            }
-                        }
-                    } label: {
+            formRow("图标") {
+                Button {
+                    isIconPickerPresented = true
+                } label: {
+                    HStack(spacing: 7) {
                         BrandLogo(brand: brand, size: 22)
+                        Text(brand.displayName)
+                            .font(.system(size: 13.5))
+                            .foregroundStyle(Theme.textSecondary)
+                        ReiconIcon(icon: .chevronRight, size: 11)
+                            .foregroundStyle(Theme.textTertiary)
                     }
-
-                    TextField("订阅名称", text: $name)
-                        .font(.system(size: 13.5))
-                        .foregroundStyle(Theme.text)
-                        .multilineTextAlignment(.trailing)
-                        .autocorrectionDisabled()
                 }
+                .buttonStyle(.plain)
             }
 
             formDivider
 
-            // 价格与币种（CNY / USD / JPY）
+            formRow("名称") {
+                TextField("订阅名称", text: $name)
+                    .font(.system(size: 13.5))
+                    .foregroundStyle(Theme.text)
+                    .multilineTextAlignment(.trailing)
+                    .autocorrectionDisabled()
+            }
+
+            formDivider
+
             formRow("价格") {
                 HStack(spacing: 8) {
                     TextField(currency == .JPY ? "0" : "0.00", text: $priceText)
@@ -245,7 +303,6 @@ struct SubscriptionEditor: View {
                 }
             }
 
-            // 汇率折算行（仅在订阅详情 / 添加页且币种为 USD / JPY 时显示）
             if currency == .USD || currency == .JPY {
                 formDivider
                 exchangeRateRow
@@ -253,7 +310,6 @@ struct SubscriptionEditor: View {
 
             formDivider
 
-            // 周期
             formRow("周期") {
                 HStack(spacing: 4) {
                     ForEach(BillingCycle.allCases) { item in
@@ -266,7 +322,6 @@ struct SubscriptionEditor: View {
 
             formDivider
 
-            // 下次扣费
             formRow("下次扣费") {
                 DatePicker("", selection: $nextCharge, displayedComponents: .date)
                     .labelsHidden()
@@ -276,25 +331,19 @@ struct SubscriptionEditor: View {
 
             formDivider
 
-            // 付款方式
             formRow("付款方式") {
-                Menu {
-                    ForEach(PaymentMethod.allCases) { item in
-                        Button {
-                            payment = item
-                        } label: {
-                            Text(payment == item ? "✓ \(item.title)" : item.title)
-                        }
-                    }
+                Button {
+                    isPaymentPickerPresented = true
                 } label: {
-                    HStack(spacing: 4) {
-                        Text(payment.title)
+                    HStack(spacing: 5) {
+                        Text(paymentTitle)
                             .font(.system(size: 13.5))
                             .foregroundStyle(Theme.textSecondary)
-                        ReiconIcon(icon: .chevronDown, size: 9)
+                        ReiconIcon(icon: .chevronRight, size: 11)
                             .foregroundStyle(Theme.textTertiary)
                     }
                 }
+                .buttonStyle(.plain)
             }
         }
         .cardSurface()
@@ -463,7 +512,7 @@ struct SubscriptionEditor: View {
         target.cycleRaw = cycle.rawValue
         target.nextChargeDate = nextCharge
         target.anchorDay = max(1, calendar.component(.day, from: nextCharge))
-        target.paymentRaw = payment.rawValue
+        target.paymentRaw = paymentTitle
         target.categoryRaw = category.rawValue
         target.brandRaw = brand.rawValue
         target.remindEnabled = remindEnabled
@@ -485,28 +534,209 @@ struct SubscriptionEditor: View {
         SubscriptionReminderService.sync(all, in: context)
         dismiss()
     }
+}
 
-    private func iconLabel(_ icon: BrandIcon) -> String {
-        switch icon {
-        case .gemini: return "Gemini"
-        case .qqMusic: return "QQ音乐"
-        case .neteaseMusic: return "网易云音乐"
-        case .jdBaitiao: return "京东白条"
-        case .appleMusic: return "Apple Music"
-        case .icloud: return "iCloud"
-        case .bilibili: return "哔哩哔哩"
-        case .baiduNetdisk: return "百度网盘"
-        case .openai: return "ChatGPT"
-        case .claude: return "Claude"
-        case .deepseek: return "DeepSeek"
-        case .google: return "Google"
-        case .apple: return "Apple"
-        case .generic: return "通用卡片"
+// MARK: - 可视化品牌图标选择网格
+
+private struct BrandIconPickerSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @Binding var selection: BrandIcon
+
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: 10), count: 4)
+
+    var body: some View {
+        NavigationStack {
+            ScrollView(.vertical, showsIndicators: false) {
+                LazyVGrid(columns: columns, spacing: 12) {
+                    ForEach(BrandIcon.allCases) { icon in
+                        let isSelected = selection == icon
+                        Button {
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            selection = icon
+                            dismiss()
+                        } label: {
+                            VStack(spacing: 8) {
+                                BrandLogo(brand: icon, size: 32)
+                                    .frame(width: 52, height: 52)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: AppRadius.item, style: .continuous)
+                                            .fill(isSelected ? Theme.brandSoft : Theme.surface)
+                                    )
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: AppRadius.item, style: .continuous)
+                                            .strokeBorder(isSelected ? Theme.brand : Theme.stroke, lineWidth: isSelected ? 1.8 : 0.6)
+                                    )
+
+                                Text(icon.displayName)
+                                    .font(.system(size: 11, weight: isSelected ? .semibold : .regular))
+                                    .foregroundStyle(isSelected ? Theme.brand : Theme.textSecondary)
+                                    .lineLimit(1)
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(PressableStyle())
+                    }
+                }
+                .padding(.horizontal, Theme.screenPadding)
+                .padding(.vertical, 16)
+            }
+            .background(Theme.bg)
+            .navigationTitle("选择图标")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("完成") { dismiss() }
+                        .foregroundStyle(Theme.brand)
+                }
+            }
         }
+        .presentationDetents([.medium, .large])
+        .presentationBackground(Theme.bg)
     }
 }
 
-// MARK: - 预设（含全部指定品牌图标）
+// MARK: - 付款方式选择与自定义管理
+
+private struct PaymentMethodPickerSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @Binding var selection: String
+
+    @State private var customInput = ""
+    @State private var customList: [String] = PaymentMethodStore.customMethods
+
+    private var builtInTitles: [String] {
+        PaymentMethod.allCases.map(\.title)
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: Theme.cardGap) {
+                    // 新增自定义付款方式
+                    HStack(spacing: 8) {
+                        TextField("输入自定义付款方式（如：招商储蓄卡）", text: $customInput)
+                            .font(.system(size: 13.5))
+                            .foregroundStyle(Theme.text)
+                            .padding(.horizontal, 12)
+                            .frame(height: 42)
+                            .background(
+                                RoundedRectangle(cornerRadius: AppRadius.item, style: .continuous)
+                                    .fill(Theme.surfaceRaised)
+                            )
+
+                        Button {
+                            if let added = PaymentMethodStore.add(customInput) {
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                customList = PaymentMethodStore.customMethods
+                                selection = added
+                                customInput = ""
+                                dismiss()
+                            }
+                        } label: {
+                            Text("添加")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(Color.white)
+                                .padding(.horizontal, 14)
+                                .frame(height: 42)
+                                .background(
+                                    RoundedRectangle(cornerRadius: AppRadius.item, style: .continuous)
+                                        .fill(Theme.brand)
+                                )
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(customInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                    .cardSurface()
+
+                    // 内置方式
+                    VStack(spacing: 0) {
+                        ForEach(Array(builtInTitles.enumerated()), id: \.element) { index, title in
+                            paymentRow(title: title, isCustom: false)
+                            if index < builtInTitles.count - 1 {
+                                Rectangle().fill(Theme.stroke).frame(height: 0.5)
+                            }
+                        }
+                    }
+                    .cardSurface(padding: 12)
+
+                    // 自定义已保存列表
+                    if !customList.isEmpty {
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text("自定义方式")
+                                .cardLabel()
+                                .padding(.horizontal, 4)
+                                .padding(.bottom, 6)
+
+                            ForEach(Array(customList.enumerated()), id: \.element) { index, title in
+                                paymentRow(title: title, isCustom: true)
+                                if index < customList.count - 1 {
+                                    Rectangle().fill(Theme.stroke).frame(height: 0.5)
+                                }
+                            }
+                        }
+                        .cardSurface(padding: 12)
+                    }
+                }
+                .padding(.horizontal, Theme.screenPadding)
+                .padding(.vertical, 12)
+            }
+            .background(Theme.bg)
+            .navigationTitle("付款方式")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("完成") { dismiss() }
+                        .foregroundStyle(Theme.brand)
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+        .presentationBackground(Theme.bg)
+    }
+
+    private func paymentRow(title: String, isCustom: Bool) -> some View {
+        let isSelected = selection == title
+        return HStack(spacing: 10) {
+            Button {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                selection = title
+                dismiss()
+            } label: {
+                HStack {
+                    Text(title)
+                        .font(.system(size: 14, weight: isSelected ? .semibold : .regular))
+                        .foregroundStyle(isSelected ? Theme.brand : Theme.text)
+                    Spacer()
+                    if isSelected {
+                        ReiconIcon(icon: .check, size: 14)
+                            .foregroundStyle(Theme.brand)
+                    }
+                }
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if isCustom {
+                Button {
+                    PaymentMethodStore.removeCustom(title)
+                    customList = PaymentMethodStore.customMethods
+                    if selection == title {
+                        selection = PaymentMethod.applePay.title
+                    }
+                } label: {
+                    ReiconIcon(icon: .trash, size: 14)
+                        .foregroundStyle(Theme.textTertiary)
+                        .padding(6)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 4)
+    }
+}
+
+// MARK: - 预设（保留供空状态快速添加卡片使用）
 
 struct SubscriptionPreset: Identifiable {
     let id: String
@@ -527,11 +757,11 @@ struct SubscriptionPreset: Identifiable {
         .init(id: "netease", label: "网易云音乐", name: "网易云黑胶", price: 15,
               currency: .CNY, cycle: .monthly, category: .media, brand: .neteaseMusic, payment: .alipay),
         .init(id: "jdbaitiao", label: "京东白条", name: "京东白条还款", price: 500,
-              currency: .CNY, cycle: .monthly, category: .other, brand: .jdBaitiao, payment: .other),
+              currency: .CNY, cycle: .monthly, category: .other, brand: .jdBaitiao, payment: .bankCard),
         .init(id: "applemusic", label: "Apple Music", name: "Apple Music", price: 11,
-              currency: .CNY, cycle: .monthly, category: .media, brand: .appleMusic, payment: .appleID),
+              currency: .CNY, cycle: .monthly, category: .media, brand: .appleMusic, payment: .applePay),
         .init(id: "icloud", label: "iCloud", name: "iCloud+", price: 21,
-              currency: .CNY, cycle: .monthly, category: .cloud, brand: .icloud, payment: .appleID),
+              currency: .CNY, cycle: .monthly, category: .cloud, brand: .icloud, payment: .applePay),
         .init(id: "bilibili", label: "哔哩哔哩", name: "哔哩哔哩大会员", price: 25,
               currency: .CNY, cycle: .monthly, category: .media, brand: .bilibili, payment: .alipay),
         .init(id: "baidu", label: "百度网盘", name: "百度网盘SVIP", price: 25,

@@ -39,9 +39,12 @@ enum Theme {
     static let cardGap: CGFloat = 10
 
     /// 所有 Tab 页 ScrollView 的统一底部留白：
-    /// 底栏 64（58+6）+ FAB 52 + 间距 18 + 余量 ≈ 150，保证最后一张卡（含「正在读」展开）
-    /// 完全滑过悬浮底栏与 + 按钮之上。
-    static let bottomScrollInset: CGFloat = 150
+    /// iOS 26 原生 TabView 自带底栏安全区，仅需为右下角 FAB 留出 90pt；
+    /// iOS 17–25 悬浮底栏需额外留白 150pt。
+    static var bottomScrollInset: CGFloat {
+        if #available(iOS 26.0, *) { return 90 }
+        return 150
+    }
 
     // MARK: 构造
 

@@ -74,18 +74,60 @@ enum SubscriptionCurrency: String, Codable, CaseIterable, Identifiable {
 }
 
 enum PaymentMethod: String, Codable, CaseIterable, Identifiable {
-    case visa, appleID, alipay, wechat, other
+    case applePay, bankCard, visa, alipay, wechat, other
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
+        case .applePay: return "Apple Pay"
+        case .bankCard: return "银行卡"
         case .visa: return "Visa"
-        case .appleID: return "Apple ID"
         case .alipay: return "支付宝"
         case .wechat: return "微信"
         case .other: return "其他"
         }
+    }
+}
+
+/// 付款方式列表管理（内置 + 用户自定义并持久化保存在列表中）
+enum PaymentMethodStore {
+    private static let key = "customPaymentMethods"
+
+    static var customMethods: [String] {
+        UserDefaults.standard.stringArray(forKey: key) ?? []
+    }
+
+    static var allTitles: [String] {
+        var list = PaymentMethod.allCases.map(\.title)
+        for custom in customMethods where !list.contains(custom) {
+            list.append(custom)
+        }
+        return list
+    }
+
+    static func add(_ rawName: String) -> String? {
+        let trimmed = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let builtIn = PaymentMethod.allCases.map(\.title)
+        var current = customMethods
+        if !builtIn.contains(trimmed) && !current.contains(trimmed) {
+            current.append(trimmed)
+            UserDefaults.standard.set(current, forKey: key)
+        }
+        return trimmed
+    }
+
+    static func removeCustom(_ title: String) {
+        var current = customMethods
+        current.removeAll { $0 == title }
+        UserDefaults.standard.set(current, forKey: key)
+    }
+
+    static func displayTitle(for raw: String) -> String {
+        if raw == "appleID" { return PaymentMethod.applePay.title }
+        if let builtin = PaymentMethod(rawValue: raw) { return builtin.title }
+        return raw.isEmpty ? PaymentMethod.applePay.title : raw
     }
 }
 
@@ -157,7 +199,11 @@ final class Subscription {
 
     var currency: SubscriptionCurrency { SubscriptionCurrency(rawValue: currencyRaw) ?? .USD }
     var cycle: BillingCycle { BillingCycle(rawValue: cycleRaw) ?? .monthly }
-    var payment: PaymentMethod { PaymentMethod(rawValue: paymentRaw) ?? .visa }
+    var payment: PaymentMethod {
+        if paymentRaw == "appleID" { return .applePay }
+        return PaymentMethod(rawValue: paymentRaw) ?? .other
+    }
+    var paymentDisplayTitle: String { PaymentMethodStore.displayTitle(for: paymentRaw) }
     var category: SubscriptionCategory { SubscriptionCategory(rawValue: categoryRaw) ?? .other }
     var brand: BrandIcon { BrandIcon.from(raw: brandRaw) }
 

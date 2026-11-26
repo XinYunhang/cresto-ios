@@ -70,6 +70,8 @@ struct BackupFile: Codable {
         var weekStart: Int
         var weekEnd: Int
         var parityRaw: String
+        var location: String?
+        var customWeeksRaw: String?
     }
 
     struct SettingsDTO: Codable {
@@ -126,6 +128,7 @@ struct BackupFile: Codable {
         var title: String
         var targetDate: Date
         var accentRaw: String
+        var isPinnedToHome: Bool?
         var createdAt: Date
     }
 }
@@ -232,7 +235,9 @@ enum BackupService {
                             endPeriod: $0.endPeriod,
                             weekStart: $0.weekStart,
                             weekEnd: $0.weekEnd,
-                            parityRaw: $0.parityRaw
+                            parityRaw: $0.parityRaw,
+                            location: $0.location,
+                            customWeeksRaw: $0.customWeeksRaw
                         )
                     }
                 )
@@ -287,6 +292,7 @@ enum BackupService {
                     title: $0.title,
                     targetDate: $0.targetDate,
                     accentRaw: $0.accentRaw,
+                    isPinnedToHome: $0.isPinnedToHome,
                     createdAt: $0.createdAt
                 )
             }
@@ -443,6 +449,8 @@ enum BackupService {
                 )
                 slot.id = s.id
                 slot.parityRaw = s.parityRaw
+                slot.location = s.location ?? ""
+                slot.customWeeksRaw = s.customWeeksRaw ?? ""
                 slot.course = course
                 return slot
             }
@@ -506,7 +514,8 @@ enum BackupService {
             let item = CountdownItem(
                 title: dto.title,
                 targetDate: dto.targetDate,
-                accent: CountdownAccent(rawValue: dto.accentRaw) ?? .indigo
+                accent: CountdownAccent(rawValue: dto.accentRaw) ?? .indigo,
+                isPinnedToHome: dto.isPinnedToHome ?? false
             )
             item.id = dto.id
             item.createdAt = dto.createdAt

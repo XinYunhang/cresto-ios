@@ -34,6 +34,9 @@ struct SettingsView: View {
     @State private var editingRate: RateKind?
     @State private var rateDraft = ""
 
+    // 个性化 / 票根预留提示
+    @State private var reservedFeatureTitle: String?
+
     private enum RateKind {
         case usd, jpy
     }
@@ -49,6 +52,7 @@ struct SettingsView: View {
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: Theme.cardGap) {
                     themeCard
+                    personalizationReservedCard
                     dataGridCard
                     exchangeRateCard
                     if FeatureFlags.enableDeepSeek {
@@ -98,6 +102,14 @@ struct SettingsView: View {
             Text(editingRate == .jpy
                  ? "当前 100 JPY = \(String(format: "%.2f", jpyToCny * 100)) CNY"
                  : "当前 1 USD = \(String(format: "%.2f", usdToCny)) CNY")
+        }
+        .alert(reservedFeatureTitle ?? "", isPresented: Binding(
+            get: { reservedFeatureTitle != nil },
+            set: { if !$0 { reservedFeatureTitle = nil } }
+        )) {
+            Button("知道了", role: .cancel) { reservedFeatureTitle = nil }
+        } message: {
+            Text("入口已预留，将在后续个性化更新中开放节日主题与旅行票根式纪念馆。")
         }
         .onAppear {
             AppLog.info("打开设置页")
@@ -198,6 +210,56 @@ struct SettingsView: View {
             }
             .padding(7)
         }
+    }
+
+    // MARK: 个性化与纪念（预留节日主题 / 纪念票根收藏）
+
+    private var personalizationReservedCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("个性化与纪念").cardLabel()
+                .padding(.bottom, 8)
+
+            Button {
+                reservedFeatureTitle = "节日主题"
+            } label: {
+                reservedRow(icon: .star, title: "节日主题", subtitle: "随节日与纪念日切换氛围视觉")
+            }
+            .buttonStyle(.plain)
+
+            Rectangle().fill(Theme.stroke).frame(height: 0.5).padding(.leading, 43)
+
+            Button {
+                reservedFeatureTitle = "纪念票根"
+            } label: {
+                reservedRow(icon: .card, title: "纪念票根收藏", subtitle: "将节日与纪念物保存为旅行票根卡片")
+            }
+            .buttonStyle(.plain)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .cardSurface(padding: 15)
+    }
+
+    private func reservedRow(icon: Reicon, title: String, subtitle: String) -> some View {
+        HStack(spacing: 11) {
+            iconBadge(icon)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 13.5, weight: .medium))
+                    .foregroundStyle(Theme.text)
+                Text(subtitle)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.textTertiary)
+            }
+            Spacer()
+            Text("预留")
+                .font(.system(size: 10.5))
+                .foregroundStyle(Theme.textTertiary)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(Capsule().fill(Theme.surfaceRaised))
+        }
+        .padding(.vertical, 10)
+        .contentShape(Rectangle())
     }
 
     // MARK: 数据概览（2×2 紧凑格 + 圆体数字）

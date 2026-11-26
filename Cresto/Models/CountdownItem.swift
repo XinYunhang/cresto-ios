@@ -36,16 +36,19 @@ final class CountdownItem {
     var title: String = ""
     var targetDate: Date = Date()
     var accentRaw: String = "indigo"
+    var isPinnedToHome: Bool = false
     var createdAt: Date = Date()
 
     init(
         title: String = "",
         targetDate: Date = Date(),
-        accent: CountdownAccent = .indigo
+        accent: CountdownAccent = .indigo,
+        isPinnedToHome: Bool = false
     ) {
         self.title = title
         self.targetDate = targetDate
         self.accentRaw = accent.rawValue
+        self.isPinnedToHome = isPinnedToHome
         self.createdAt = Date()
     }
 

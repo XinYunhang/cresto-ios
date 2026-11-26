@@ -8,7 +8,7 @@ struct RootView: View {
     @AppStorage("appTheme") private var appTheme = "system"
 
     @State private var tab: AppTab = .overview
-    /// 已挂载过的页面（保活：切 Tab 只切换显隐与命中，不销毁重建）
+    /// iOS 17–25 保活集合
     @State private var mountedTabs: Set<AppTab> = [.overview]
     @State private var isQuickAddPresented = false
     @State private var isSettingsPresented = false
@@ -27,58 +27,12 @@ struct RootView: View {
     }
 
     var body: some View {
-        ZStack(alignment: .bottom) {
-            Theme.bg.ignoresSafeArea()
-
-            // 保活容器：页面首次访问时懒加载，之后只切换显隐/命中（避免切 Tab 销毁重建复杂列表与网格）
-            ZStack {
-                if isMounted(.overview) {
-                    OverviewView(
-                        onOpenTasks: { tab = .tasks },
-                        onOpenCourse: { tab = .course },
-                        onOpenSubscriptions: { tab = .ledger },
-                        onAddTask: { isQuickAddPresented = true },
-                        onOpenSettings: { isSettingsPresented = true }
-                    )
-                    .tabPageVisible(tab == .overview)
-                }
-
-                if isMounted(.tasks) {
-                    TasksView(onAdd: { isQuickAddPresented = true })
-                        .tabPageVisible(tab == .tasks)
-                }
-
-                if isMounted(.course) {
-                    TimetableView()
-                        .tabPageVisible(tab == .course)
-                }
-
-                if isMounted(.ledger) {
-                    SubscriptionMainView()
-                        .tabPageVisible(tab == .ledger)
-                }
-
-                if FeatureFlags.enableDeepSeek, isMounted(.api) {
-                    DeepSeekMonitorView()
-                        .tabPageVisible(tab == .api)
-                }
+        ZStack {
+            if #available(iOS 26.0, *) {
+                nativeTabView
+            } else {
+                legacyTabContainer
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-            // 轻柔底边微晕，让全液态玻璃底栏真实折射下方内容
-            VStack(spacing: 0) {
-                Spacer()
-                LinearGradient(
-                    colors: [Theme.bg.opacity(0), Theme.bg.opacity(0.32)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .frame(height: 22)
-            }
-            .ignoresSafeArea(edges: .bottom)
-            .allowsHitTesting(false)
-
-            GlassTabBar(selection: $tab)
 
             if showSplash {
                 SplashOverlayView {
@@ -113,7 +67,6 @@ struct RootView: View {
             pollDeepSeekIfNeeded()
         }
         .onReceive(NotificationCenter.default.publisher(for: .dataRestored)) { _ in
-            // 恢复后旧的提醒都失效了，按新数据重排一遍
             let tasks = (try? context.fetch(FetchDescriptor<TaskItem>())) ?? []
             NotificationScheduler.syncAll(tasks)
             AppLog.info("数据已恢复：重排 \(tasks.count) 条提醒")
@@ -126,11 +79,116 @@ struct RootView: View {
         }
     }
 
-    private var colorScheme: ColorScheme? {
-        switch appTheme {
-        case "dark": return .dark
-        case "light": return .light
-        default: return nil
+    // MARK: iOS 26+ 原生液态玻璃 TabView
+
+    @available(iOS 26.0, *)
+    private var nativeTabView: some View {
+        TabView(selection: $tab) {
+            Tab(value: AppTab.overview) {
+                tabContent(for: .overview)
+                    .background(Theme.bg.ignoresSafeArea())
+            } label: {
+                tabLabel(.overview)
+            }
+
+            Tab(value: AppTab.tasks) {
+                tabContent(for: .tasks)
+                    .background(Theme.bg.ignoresSafeArea())
+            } label: {
+                tabLabel(.tasks)
+            }
+
+            Tab(value: AppTab.course) {
+                tabContent(for: .course)
+                    .background(Theme.bg.ignoresSafeArea())
+            } label: {
+                tabLabel(.course)
+            }
+
+            Tab(value: AppTab.ledger) {
+                tabContent(for: .ledger)
+                    .background(Theme.bg.ignoresSafeArea())
+            } label: {
+                tabLabel(.ledger)
+            }
+
+            if FeatureFlags.enableDeepSeek {
+                Tab(value: AppTab.api) {
+                    tabContent(for: .api)
+                        .background(Theme.bg.ignoresSafeArea())
+                } label: {
+                    tabLabel(.api)
+                }
+            }
+        }
+        .tint(Theme.brand)
+    }
+
+    private func tabLabel(_ item: AppTab) -> some View {
+        Label {
+            Text(item.title)
+        } icon: {
+            Image(uiImage: Reicon.tabImage(item.reicon))
+        }
+    }
+
+    // MARK: iOS 17–25 兜底容器
+
+    private var legacyTabContainer: some View {
+        ZStack(alignment: .bottom) {
+            Theme.bg.ignoresSafeArea()
+
+            ZStack {
+                if isMounted(.overview) {
+                    tabContent(for: .overview)
+                        .tabPageVisible(tab == .overview)
+                }
+
+                if isMounted(.tasks) {
+                    tabContent(for: .tasks)
+                        .tabPageVisible(tab == .tasks)
+                }
+
+                if isMounted(.course) {
+                    tabContent(for: .course)
+                        .tabPageVisible(tab == .course)
+                }
+
+                if isMounted(.ledger) {
+                    tabContent(for: .ledger)
+                        .tabPageVisible(tab == .ledger)
+                }
+
+                if FeatureFlags.enableDeepSeek, isMounted(.api) {
+                    tabContent(for: .api)
+                        .tabPageVisible(tab == .api)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            GlassTabBar(selection: $tab)
+        }
+    }
+
+    @ViewBuilder
+    private func tabContent(for item: AppTab) -> some View {
+        switch item {
+        case .overview:
+            OverviewView(
+                onOpenTasks: { tab = .tasks },
+                onOpenCourse: { tab = .course },
+                onOpenSubscriptions: { tab = .ledger },
+                onAddTask: { isQuickAddPresented = true },
+                onOpenSettings: { isSettingsPresented = true }
+            )
+        case .tasks:
+            TasksView(onAdd: { isQuickAddPresented = true })
+        case .course:
+            TimetableView()
+        case .ledger:
+            SubscriptionMainView()
+        case .api:
+            DeepSeekMonitorView()
         }
     }
 
@@ -159,10 +217,7 @@ struct RootView: View {
 
     // MARK: DeepSeek 轮询
 
-    /// 前台按设置项间隔采样余额（60–300s，默认 5 分钟），差值落库（笔记 07 §3）。
-    /// 借用 60s 心跳做节流，间隔改了立即生效，不用重建 Timer。
     private func pollDeepSeekIfNeeded() {
-        // 开关关闭时停止自动轮询（服务与数据完整保留，切回 true 即恢复）
         guard FeatureFlags.enableDeepSeek else { return }
         guard KeychainService.load()?.isEmpty == false else { return }
         let interval = TimeInterval(max(60, min(300, deepseekPollSeconds)))
@@ -179,7 +234,6 @@ struct RootView: View {
         }
     }
 
-    /// 首次访问的 Tab 当帧即可渲染（`tab == page` 兜底），onChange 再纳入保活集合
     private func isMounted(_ page: AppTab) -> Bool {
         mountedTabs.contains(page) || tab == page
     }
@@ -188,7 +242,6 @@ struct RootView: View {
 // MARK: - 保活页显隐
 
 private extension View {
-    /// 保活页的显隐切换：只影响透明度与命中，不参与布局重建
     func tabPageVisible(_ isVisible: Bool) -> some View {
         self
             .opacity(isVisible ? 1 : 0)
@@ -202,7 +255,6 @@ private extension View {
         .modelContainer(PreviewData.container)
 }
 
-/// SwiftUI 预览用的内存容器
 @MainActor
 enum PreviewData {
     static let container: ModelContainer = {

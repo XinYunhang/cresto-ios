@@ -2,15 +2,18 @@ import SwiftUI
 import SwiftData
 import UIKit
 
-/// FAB 拉起来的快速添加。选好日期点「添加」就结束；
-/// 要提醒 / 重复 / 子任务就点「更多选项」，原地展开成完整编辑页。
+/// Flomo 风格悬空液态玻璃快速输入浮卡（iOS 26 走原生玻璃材质与按钮，iOS 17–25 毛玻璃兜底）。
 struct QuickAddSheet: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
 
     @State private var text = ""
     @State private var choice: DueChoice = .today
     @State private var urgency: TaskUrgency = .mild
+    @State private var tags: [String] = []
+    @State private var isAddingTag = false
+    @State private var tagDraft = ""
     @State private var expanded = false
     @FocusState private var focused: Bool
 
@@ -25,7 +28,15 @@ struct QuickAddSheet: View {
             switch self {
             case .today: return "今天"
             case .tomorrow: return "明天"
-            case .none: return "不设日期"
+            case .none: return "无日期"
+            }
+        }
+
+        var next: DueChoice {
+            switch self {
+            case .today: return .tomorrow
+            case .tomorrow: return .none
+            case .none: return .today
             }
         }
 
@@ -45,136 +56,176 @@ struct QuickAddSheet: View {
     var body: some View {
         Group {
             if expanded {
-                TaskEditor(defaultDate: choice.date, defaultTitle: text, defaultUrgency: urgency)
+                TaskEditor(
+                    defaultDate: choice.date,
+                    defaultTitle: text,
+                    defaultUrgency: urgency,
+                    defaultTags: tags
+                )
             } else {
-                quickContent
+                floatingCard
             }
         }
-        .presentationDetents(expanded ? [.large] : [.height(340)])
+        .presentationDetents(expanded ? [.large] : [.height(246)])
         .presentationDragIndicator(.hidden)
-        .presentationBackground(Theme.surfaceRaised)
+        .presentationBackground(.clear)
         .onAppear { focused = true }
+        .alert("添加标签", isPresented: $isAddingTag) {
+            TextField("5 个字以内", text: $tagDraft)
+            Button("添加") { commitTag() }
+            Button("取消", role: .cancel) { tagDraft = "" }
+        }
     }
 
-    private var quickContent: some View {
-        VStack(alignment: .leading, spacing: 0) {
+    private var floatingCard: some View {
+        VStack(spacing: 0) {
+            Spacer(minLength: 0)
+
+            cardContent
+                .padding(.horizontal, 16)
+                .padding(.top, 10)
+                .padding(.bottom, 14)
+                .modifier(QuickCardGlassModifier(colorScheme: colorScheme))
+                .padding(.horizontal, 12)
+                .padding(.bottom, 8)
+        }
+    }
+
+    private var cardContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
             Capsule()
-                .fill(Color.white.opacity(0.18))
-                .frame(width: 38, height: 4)
+                .fill(Theme.textTertiary.opacity(0.35))
+                .frame(width: 36, height: 4)
                 .frame(maxWidth: .infinity)
-                .padding(.bottom, 15)
 
-            Text("新建待办")
-                .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(Theme.text)
-                .padding(.bottom, 13)
-
-            TextField("要做点什么？", text: $text, axis: .vertical)
+            TextField("现在的想法是…", text: $text, axis: .vertical)
                 .textFieldStyle(.plain)
-                .font(.system(size: 15))
+                .font(.system(size: 16))
                 .foregroundStyle(Theme.text)
-                .lineLimit(1...3)
+                .lineLimit(2...5)
                 .focused($focused)
+                .frame(minHeight: 72, alignment: .topLeading)
                 .submitLabel(.done)
                 .onSubmit(add)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 12)
-                .background(
-                    RoundedRectangle(cornerRadius: AppRadius.item, style: .continuous)
-                        .fill(Color.white.opacity(0.05))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: AppRadius.item, style: .continuous)
-                        .strokeBorder(focused ? Color.white.opacity(0.35) : Theme.stroke, lineWidth: 1)
-                )
 
-            HStack(spacing: 6) {
-                ForEach(DueChoice.allCases) { item in
-                    let isOn = choice == item
-                    Button {
-                        withAnimation(.snappy(duration: 0.18)) { choice = item }
-                    } label: {
-                        Text(item.title)
-                            .font(.system(size: 12))
-                            .foregroundStyle(isOn ? Theme.bg : Theme.textSecondary)
-                            .padding(.horizontal, 13)
-                            .padding(.vertical, 6)
-                            .background(Capsule().fill(isOn ? Theme.ink : Color.white.opacity(0.05)))
-                            .overlay(Capsule().strokeBorder(isOn ? Color.clear : Theme.stroke, lineWidth: 1))
+            if !tags.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(tags, id: \.self) { tag in
+                            Button {
+                                tags.removeAll { $0 == tag }
+                            } label: {
+                                HStack(spacing: 3) {
+                                    Text("#\(tag)")
+                                    ReiconIcon(icon: .xmark, size: 8)
+                                }
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(Theme.brand)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Capsule().fill(Theme.brandSoft))
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
-                    .buttonStyle(.plain)
                 }
-
-                Spacer(minLength: 0)
-
-                // 紧急程度小胶囊（设计图：日期行最右侧，点按循环 轻微→重要→紧急）
-                urgencyCapsule
             }
-            .padding(.top, 12)
 
-            HStack(spacing: 6) {
-                Button {
-                    withAnimation(.snappy(duration: 0.2)) { expanded = true }
-                } label: {
-                    HStack(spacing: 4) {
-                        ReiconIcon(icon: .sliderHorizontal, size: 13)
-                        Text("时间、提醒、子任务")
-                    }
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.textSecondary)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                Spacer()
-            }
-            .padding(.top, 14)
-
-            Button(action: add) {
-                Text("添加")
-                    .font(.system(size: 14.5, weight: .semibold))
-                    .foregroundStyle(Theme.bg)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 46)
-                    .background(
-                        RoundedRectangle(cornerRadius: AppRadius.item, style: .continuous)
-                            .fill(Theme.ink)
-                    )
-            }
-            .buttonStyle(PressableStyle())
-            .padding(.top, 16)
+            toolbarRow
         }
-        .padding(.horizontal, 18)
-        .padding(.top, 10)
-        .padding(.bottom, 26)
-        .background(Theme.surfaceRaised.ignoresSafeArea())
     }
 
-    // MARK: 紧急程度胶囊
-
-    private var urgencyCapsule: some View {
-        Button {
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                urgency = urgency.next
+    @ViewBuilder
+    private var toolbarRow: some View {
+        if #available(iOS 26.0, *) {
+            GlassEffectContainer(spacing: 8) {
+                toolbarButtons
             }
-            hapticSelect.selectionChanged()
-        } label: {
-            HStack(spacing: 5) {
-                Circle()
-                    .fill(urgency.tint)
-                    .frame(width: 7, height: 7)
-                    .shadow(color: urgency.tint.opacity(0.85), radius: 3.5)
-                Text(urgency.title)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(urgency.tint)
-            }
-            .padding(.horizontal, 11)
-            .padding(.vertical, 6)
-            .background(Capsule().fill(urgency.tint.opacity(0.12)))
-            .overlay(Capsule().strokeBorder(urgency.tint.opacity(0.35), lineWidth: 1))
+        } else {
+            toolbarButtons
         }
-        .buttonStyle(PressableStyle())
-        .accessibilityLabel("紧急程度：\(urgency.title)")
-        .accessibilityHint("点按切换档位")
+    }
+
+    private var toolbarButtons: some View {
+        HStack(spacing: 8) {
+            // # 标签
+            toolIconButton(.hashtag, label: "标签") {
+                isAddingTag = true
+            }
+
+            // 日期轮换胶囊
+            Button {
+                hapticSelect.selectionChanged()
+                withAnimation(.snappy(duration: 0.18)) { choice = choice.next }
+            } label: {
+                HStack(spacing: 4) {
+                    ReiconIcon(icon: .calendar, size: 13.5)
+                    Text(choice.title)
+                        .font(.system(size: 11.5, weight: .medium))
+                }
+                .foregroundStyle(choice == .none ? Theme.textTertiary : Theme.text)
+                .padding(.horizontal, 10)
+                .frame(height: 34)
+                .modifier(QuickButtonGlassModifier())
+            }
+            .buttonStyle(.plain)
+
+            // 简洁三档紧急度
+            Button {
+                hapticSelect.selectionChanged()
+                withAnimation(.snappy(duration: 0.18)) { urgency = urgency.next }
+            } label: {
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(urgency.tint)
+                        .frame(width: 7, height: 7)
+                    Text(urgency.title)
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(urgency.tint)
+                }
+                .padding(.horizontal, 10)
+                .frame(height: 34)
+                .modifier(QuickButtonGlassModifier())
+            }
+            .buttonStyle(.plain)
+
+            // 展开完整编辑页
+            toolIconButton(.sliderHorizontal, label: "更多选项") {
+                withAnimation(.snappy(duration: 0.2)) { expanded = true }
+            }
+
+            Spacer(minLength: 4)
+
+            // 发送 / 添加键
+            Button(action: add) {
+                ReiconIcon(icon: .check, size: 16)
+                    .foregroundStyle(Color.white)
+                    .frame(width: 36, height: 36)
+                    .background(Circle().fill(Theme.brand))
+                    .modifier(QuickSendGlassModifier())
+            }
+            .buttonStyle(PressableStyle())
+            .accessibilityLabel("添加待办")
+        }
+    }
+
+    private func toolIconButton(_ icon: Reicon, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            ReiconIcon(icon: icon, size: 15)
+                .foregroundStyle(Theme.textSecondary)
+                .frame(width: 34, height: 34)
+                .modifier(QuickCircleGlassModifier())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+    }
+
+    private func commitTag() {
+        var value = tagDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        tagDraft = ""
+        guard !value.isEmpty else { return }
+        if value.count > 5 { value = String(value.prefix(5)) }
+        if !tags.contains(value) { tags.append(value) }
     }
 
     private func add() {
@@ -182,11 +233,66 @@ struct QuickAddSheet: View {
         let task = TaskItem(
             title: trimmed.isEmpty ? "一件新的事" : trimmed,
             dueDate: choice.date,
+            tags: tags,
             urgency: urgency
         )
         context.insert(task)
         NotificationScheduler.sync(task)
         try? context.save()
         dismiss()
+    }
+}
+
+// MARK: - 原生玻璃容器 / 按键适配
+
+private struct QuickCardGlassModifier: ViewModifier {
+    let colorScheme: ColorScheme
+
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 28, style: .continuous)
+        if #available(iOS 26.0, *) {
+            content
+                .glassEffect(.regular, in: shape)
+        } else {
+            content
+                .background(shape.fill(.ultraThinMaterial))
+                .overlay(
+                    shape.strokeBorder(
+                        Color.white.opacity(colorScheme == .dark ? 0.16 : 0.72),
+                        lineWidth: 0.6
+                    )
+                )
+                .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.35 : 0.10), radius: 18, y: 6)
+        }
+    }
+}
+
+private struct QuickButtonGlassModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content.glassEffect(.regular.interactive(), in: Capsule())
+        } else {
+            content.background(Capsule().fill(Theme.surfaceRaised.opacity(0.85)))
+        }
+    }
+}
+
+private struct QuickCircleGlassModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content.glassEffect(.regular.interactive(), in: Circle())
+        } else {
+            content.background(Circle().fill(Theme.surfaceRaised.opacity(0.85)))
+        }
+    }
+}
+
+private struct QuickSendGlassModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content.glassEffect(.regular.interactive(), in: Circle())
+        } else {
+            content
+        }
     }
 }

@@ -38,9 +38,11 @@ final class CourseSlot {
     var parityRaw: String = "all"
     /// 单双周可能在不同教室，所以地点挂在时间块上
     var location: String = ""
+    /// 自定义离散周次集合（逗号分隔；空串时按 weekStart/weekEnd/parity 计算）
+    var customWeeksRaw: String = ""
     var course: Course?
 
-    init(weekday: Int = 1, startPeriod: Int = 1, endPeriod: Int = 2, weekStart: Int = 1, weekEnd: Int = 20, parity: WeekParity = .all, location: String = "") {
+    init(weekday: Int = 1, startPeriod: Int = 1, endPeriod: Int = 2, weekStart: Int = 1, weekEnd: Int = 20, parity: WeekParity = .all, location: String = "", customWeeksRaw: String = "") {
         self.weekday = weekday
         self.startPeriod = startPeriod
         self.endPeriod = endPeriod
@@ -48,6 +50,7 @@ final class CourseSlot {
         self.weekEnd = weekEnd
         self.parityRaw = parity.rawValue
         self.location = location
+        self.customWeeksRaw = customWeeksRaw
     }
 
     var parity: WeekParity {
@@ -58,12 +61,96 @@ final class CourseSlot {
     var periodSpan: Int { max(1, endPeriod - startPeriod + 1) }
 
     func isActive(inWeek week: Int) -> Bool {
+        let raw = customWeeksRaw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !raw.isEmpty {
+            return activeWeeks().contains(week)
+        }
         guard week >= weekStart, week <= weekEnd else { return false }
         switch parity {
         case .all: return true
         case .odd: return week % 2 == 1
         case .even: return week % 2 == 0
         }
+    }
+
+    func activeWeeks(maxWeek: Int = 20) -> Set<Int> {
+        let raw = customWeeksRaw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !raw.isEmpty {
+            return Set(raw.split(separator: ",").compactMap { Int($0) }.filter { $0 >= 1 && $0 <= maxWeek })
+        }
+        guard weekStart <= weekEnd else { return [] }
+        var result: Set<Int> = []
+        for week in max(1, weekStart)...min(maxWeek, weekEnd) {
+            switch parity {
+            case .all: result.insert(week)
+            case .odd: if week % 2 == 1 { result.insert(week) }
+            case .even: if week % 2 == 0 { result.insert(week) }
+            }
+        }
+        return result
+    }
+
+    func setActiveWeeks(_ weeks: Set<Int>) {
+        let sorted = weeks.filter { $0 >= 1 && $0 <= 20 }.sorted()
+        guard let first = sorted.first, let last = sorted.last else {
+            weekStart = 1
+            weekEnd = 0
+            parity = .all
+            customWeeksRaw = ""
+            return
+        }
+        if sorted.count == (last - first + 1) {
+            weekStart = first
+            weekEnd = last
+            parity = .all
+            customWeeksRaw = ""
+            return
+        }
+        let allOdd = sorted.allSatisfy { $0 % 2 == 1 }
+        if allOdd, let expected = Optional(stride(from: first, through: last, by: 2).map { $0 }), expected == sorted {
+            weekStart = first
+            weekEnd = last
+            parity = .odd
+            customWeeksRaw = ""
+            return
+        }
+        let allEven = sorted.allSatisfy { $0 % 2 == 0 }
+        if allEven, let expected = Optional(stride(from: first, through: last, by: 2).map { $0 }), expected == sorted {
+            weekStart = first
+            weekEnd = last
+            parity = .even
+            customWeeksRaw = ""
+            return
+        }
+        weekStart = first
+        weekEnd = last
+        parity = .all
+        customWeeksRaw = sorted.map(String.init).joined(separator: ",")
+    }
+
+    func weekSummaryText(maxWeek: Int = 20) -> String {
+        let active = activeWeeks(maxWeek: maxWeek).sorted()
+        guard let first = active.first, let last = active.last else { return "暂无周次" }
+        let raw = customWeeksRaw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if raw.isEmpty {
+            var text = "\(first)-\(last) 周"
+            if parity != .all { text += " · \(parity.title)" }
+            return text
+        }
+        var ranges: [String] = []
+        var runStart = first
+        var runEnd = first
+        for w in active.dropFirst() {
+            if w == runEnd + 1 {
+                runEnd = w
+            } else {
+                ranges.append(runStart == runEnd ? "\(runStart)" : "\(runStart)-\(runEnd)")
+                runStart = w
+                runEnd = w
+            }
+        }
+        ranges.append(runStart == runEnd ? "\(runStart)" : "\(runStart)-\(runEnd)")
+        return ranges.joined(separator: ", ") + " 周"
     }
 }
 

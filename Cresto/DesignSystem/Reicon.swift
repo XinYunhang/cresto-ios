@@ -74,6 +74,19 @@ extension Reicon {
         guard let image = UIImage(named: icon.rawValue) else { return UIImage() }
         return image.withRenderingMode(.alwaysTemplate)
     }
+
+    /// 供 iOS 26 原生 TabView / Tab 使用的精确点尺寸模板图标
+    static func tabImage(_ icon: Reicon, size: CGFloat = 22) -> UIImage {
+        let target = CGSize(width: size, height: size)
+        guard let base = UIImage(named: icon.rawValue)?.withRenderingMode(.alwaysTemplate) else {
+            return UIImage().withRenderingMode(.alwaysTemplate)
+        }
+        let renderer = UIGraphicsImageRenderer(size: target)
+        return renderer.image { _ in
+            base.draw(in: CGRect(origin: .zero, size: target))
+        }
+        .withRenderingMode(.alwaysTemplate)
+    }
 }
 
 extension Image {
@@ -109,6 +122,45 @@ enum BrandIcon: String, CaseIterable, Identifiable {
 
     static func from(raw: String) -> BrandIcon {
         BrandIcon(rawValue: raw) ?? .generic
+    }
+
+    var displayName: String {
+        switch self {
+        case .gemini: return "Gemini"
+        case .qqMusic: return "QQ音乐"
+        case .neteaseMusic: return "网易云音乐"
+        case .jdBaitiao: return "京东白条"
+        case .appleMusic: return "Apple Music"
+        case .icloud: return "iCloud"
+        case .bilibili: return "哔哩哔哩"
+        case .baiduNetdisk: return "百度网盘"
+        case .openai: return "ChatGPT"
+        case .claude: return "Claude"
+        case .deepseek: return "DeepSeek"
+        case .google: return "Google"
+        case .apple: return "Apple"
+        case .generic: return "通用卡片"
+        }
+    }
+
+    /// 主信息色块卡片的柔和品牌主题色
+    var tintColor: Color {
+        switch self {
+        case .gemini: return Color(hex: 0x3186FF)
+        case .qqMusic: return Color(hex: 0x16B768)
+        case .neteaseMusic: return Color(hex: 0xD43C33)
+        case .jdBaitiao: return Color(hex: 0xE1251B)
+        case .appleMusic: return Color(hex: 0xFA243C)
+        case .icloud: return Color(hex: 0x3693F3)
+        case .bilibili: return Color(hex: 0x00A1D6)
+        case .baiduNetdisk: return Color(hex: 0x06A7FF)
+        case .openai: return Color(hex: 0x10A37F)
+        case .claude: return Color(hex: 0xD97757)
+        case .deepseek: return Color(hex: 0x4D6BFE)
+        case .google: return Color(hex: 0x4285F4)
+        case .apple: return Color(hex: 0x6E7382)
+        case .generic: return Theme.brand
+        }
     }
 }
 

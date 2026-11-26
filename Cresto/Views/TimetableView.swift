@@ -73,7 +73,11 @@ struct TimetableView: View {
             editorContext = CourseEditorContext(course: nil, slot: nil)
         }
         .sheet(item: $editorContext) { context in
-            CourseEditor(course: context.course, slot: context.slot)
+            if let course = context.course, let slot = context.slot {
+                CourseDetailSheet(course: course, slot: slot, displayWeek: currentWeek)
+            } else {
+                CourseEditor(course: nil, slot: nil)
+            }
         }
         .sheet(isPresented: $isImportPresented) {
             TimetableImportView()
@@ -322,8 +326,9 @@ struct TimetableView: View {
                         }
                     }
 
-                    Text("\(slot.startPeriod)-\(slot.endPeriod) 节 · \(timeText(slot))")
-                        .font(.system(size: 11.5))
+                    Text("第 \(slot.startPeriod)-\(slot.endPeriod) 节")
+                        .font(.system(size: 11.5, weight: .medium, design: .rounded))
+                        .monospacedDigit()
                         .foregroundStyle(tone.fg.opacity(0.78))
 
                     Text(metaText(course, slot))
@@ -406,7 +411,7 @@ struct TimetableView: View {
             Text(TimetableMath.monthText(week: currentWeek, settings: settings))
                 .font(.system(size: 10))
                 .foregroundStyle(Theme.textTertiary)
-                .frame(width: 34, alignment: .leading)
+                .frame(width: 28, alignment: .leading)
 
             ForEach(1...7, id: \.self) { day in
                 let isToday = day == TimetableMath.todayWeekday && currentWeek == (settings?.weekNumber(for: now) ?? 1)
@@ -430,7 +435,7 @@ struct TimetableView: View {
 
     private var gridBody: some View {
         GeometryReader { geo in
-            let columnWidth = max(0, (geo.size.width - 34) / 7)
+            let columnWidth = max(0, (geo.size.width - 28) / 7)
             let totalHeight = CGFloat(periodCount) * rowHeight
 
             ZStack(alignment: .topLeading) {
@@ -446,17 +451,11 @@ struct TimetableView: View {
         VStack(spacing: 0) {
             ForEach(1...periodCount, id: \.self) { period in
                 HStack(spacing: 0) {
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("\(period)")
-                            .font(.system(size: 11))
-                            .foregroundStyle(Theme.textTertiary)
-                        if let settings {
-                            Text(settings.startText(ofPeriod: period))
-                                .font(.system(size: 7.5))
-                                .foregroundStyle(Theme.textTertiary.opacity(0.7))
-                        }
-                    }
-                    .frame(width: 34, alignment: .leading)
+                    Text("\(period)")
+                        .font(.system(size: 11, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(Theme.textTertiary)
+                        .frame(width: 28, alignment: .leading)
 
                     ForEach(1...7, id: \.self) { _ in
                         Rectangle()
@@ -526,7 +525,7 @@ struct TimetableView: View {
             }
             .buttonStyle(.plain)
             .offset(
-                x: 34 + CGFloat(item.slot.weekday - 1) * columnWidth + 1.5,
+                x: 28 + CGFloat(item.slot.weekday - 1) * columnWidth + 1.5,
                 y: CGFloat(item.slot.startPeriod - 1) * rowHeight + 2
             )
         }

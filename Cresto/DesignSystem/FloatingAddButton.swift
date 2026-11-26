@@ -5,7 +5,10 @@ import SwiftUI
 enum FloatingAnchor {
     static let size: CGFloat = 52
     static let trailing: CGFloat = 20
-    static let bottom: CGFloat = 80
+    static var bottom: CGFloat {
+        if #available(iOS 26.0, *) { return 18 }
+        return 80
+    }
 }
 
 struct FloatingActionButton: View {

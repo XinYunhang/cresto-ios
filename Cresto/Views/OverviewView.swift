@@ -325,6 +325,9 @@ struct OverviewView: View {
     // MARK: 右上 1×1 · 自定义多倒数日预览（绝不默认放假）
 
     private var nearestCountdown: CountdownItem? {
+        if let pinned = countdowns.first(where: { $0.isPinnedToHome }) {
+            return pinned
+        }
         if let upcoming = countdowns.first(where: { $0.daysRemaining(from: now) >= 0 }) {
             return upcoming
         }
