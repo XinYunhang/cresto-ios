@@ -65,20 +65,28 @@ struct QuickAddOverlay: View {
     }
 
     var body: some View {
-        ZStack(alignment: .bottom) {
+        ZStack {
             Color.black
                 .opacity(colorScheme == .dark ? 0.38 : 0.16)
                 .ignoresSafeArea()
-                .onTapGesture { close() }
+                .allowsHitTesting(false)
 
-            cardContent
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
-                .padding(.bottom, 14)
-                .modifier(QuickCardGlassModifier(colorScheme: colorScheme))
-                .padding(.horizontal, 8)
-                .padding(.bottom, 8)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
+            VStack(spacing: 0) {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture { close() }
+
+                cardContent
+                    .padding(.horizontal, 16)
+                    .padding(.top, 12)
+                    .padding(.bottom, 14)
+                    .background(Color.black.opacity(0.001))
+                    .contentShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+                    .modifier(QuickCardGlassModifier(colorScheme: colorScheme))
+                    .padding(.horizontal, 8)
+                    .padding(.bottom, 8)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
         }
         .onAppear {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
@@ -171,6 +179,7 @@ struct QuickAddOverlay: View {
                 .foregroundStyle(choice == .none ? Theme.textTertiary : Theme.text)
                 .padding(.horizontal, 10)
                 .frame(height: 34)
+                .contentShape(Capsule())
                 .modifier(QuickButtonGlassModifier())
             }
             .buttonStyle(.plain)
@@ -189,6 +198,7 @@ struct QuickAddOverlay: View {
                 }
                 .padding(.horizontal, 10)
                 .frame(height: 34)
+                .contentShape(Capsule())
                 .modifier(QuickButtonGlassModifier())
             }
             .buttonStyle(.plain)
@@ -204,6 +214,7 @@ struct QuickAddOverlay: View {
                     .foregroundStyle(Color.white)
                     .frame(width: 36, height: 36)
                     .background(Circle().fill(Theme.brand))
+                    .contentShape(Circle())
                     .modifier(QuickSendGlassModifier())
             }
             .buttonStyle(PressableStyle())
@@ -216,6 +227,7 @@ struct QuickAddOverlay: View {
             ReiconIcon(icon: icon, size: 15)
                 .foregroundStyle(Theme.textSecondary)
                 .frame(width: 34, height: 34)
+                .contentShape(Circle())
                 .modifier(QuickCircleGlassModifier())
         }
         .buttonStyle(.plain)

@@ -6,6 +6,7 @@ struct CrestoApp: App {
     private let container: ModelContainer
 
     init() {
+        MottoFont.registerIfNeeded()
         container = Persistence.makeContainer()
 
         SeedData.seedIfNeeded(container.mainContext)

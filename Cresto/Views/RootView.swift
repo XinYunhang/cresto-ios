@@ -4,7 +4,6 @@ import SwiftData
 struct RootView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.scenePhase) private var scenePhase
-    @Environment(\.colorScheme) private var colorScheme
 
     @AppStorage("appTheme") private var appTheme = "system"
 
@@ -158,17 +157,9 @@ struct RootView: View {
         .tint(Theme.brand)
     }
 
-    @ViewBuilder
     private func tabLabel(_ item: AppTab) -> some View {
-        Label {
-            Text(item.title)
-        } icon: {
-            if item == .overview {
-                Image(uiImage: Reicon.centerBlueTabImage(item.reicon, isDark: colorScheme == .dark))
-            } else {
-                Image(uiImage: Reicon.tabImage(item.reicon))
-            }
-        }
+        Image(uiImage: Reicon.tabImage(item.reicon, size: 23))
+            .accessibilityLabel(item.title)
     }
 
     // MARK: iOS 17–25 兜底容器

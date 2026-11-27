@@ -87,30 +87,6 @@ extension Reicon {
         }
         .withRenderingMode(.alwaysTemplate)
     }
-
-    /// 5-Tab 居中「概览」蓝色块图标（圆角钴蓝底 + 白色宫格图标，保持原色不受 Tab 选中着色冲刷）
-    static func centerBlueTabImage(_ icon: Reicon, isDark: Bool) -> UIImage {
-        let target = CGSize(width: 36, height: 26)
-        let renderer = UIGraphicsImageRenderer(size: target)
-        return renderer.image { _ in
-            let rect = CGRect(origin: .zero, size: target)
-            let path = UIBezierPath(roundedRect: rect, cornerRadius: 8.5)
-            UIColor(rgb: isDark ? 0x6B8AFF : 0x3B5BDB).setFill()
-            path.fill()
-
-            if let base = UIImage(named: icon.rawValue)?.withTintColor(.white, renderingMode: .alwaysOriginal) {
-                let iconSize: CGFloat = 15
-                let iconRect = CGRect(
-                    x: (target.width - iconSize) / 2,
-                    y: (target.height - iconSize) / 2,
-                    width: iconSize,
-                    height: iconSize
-                )
-                base.draw(in: iconRect)
-            }
-        }
-        .withRenderingMode(.alwaysOriginal)
-    }
 }
 
 extension Image {
