@@ -23,20 +23,29 @@ struct GlassTabBar: View {
                     }
                 } label: {
                     ZStack {
-                        if isSelected {
-                            Capsule()
-                                .fill(Color.primary.opacity(colorScheme == .dark ? 0.14 : 0.08))
-                                .overlay(
-                                    Capsule()
-                                        .strokeBorder(
-                                            Color.white.opacity(colorScheme == .dark ? 0.18 : 0.68),
-                                            lineWidth: 0.5
-                                        )
-                                )
-                                .matchedGeometryEffect(id: "tabLens", in: tabNS)
+                        if item == .overview {
+                            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                                .fill(Theme.brand)
+                                .frame(width: 42, height: 34)
+                                .shadow(color: Theme.brand.opacity(0.28), radius: 6, y: 2)
+                            ReiconIcon(icon: item.reicon, size: 19)
+                                .foregroundStyle(Color.white)
+                        } else {
+                            if isSelected {
+                                Capsule()
+                                    .fill(Color.primary.opacity(colorScheme == .dark ? 0.14 : 0.08))
+                                    .overlay(
+                                        Capsule()
+                                            .strokeBorder(
+                                                Color.white.opacity(colorScheme == .dark ? 0.18 : 0.68),
+                                                lineWidth: 0.5
+                                            )
+                                    )
+                                    .matchedGeometryEffect(id: "tabLens", in: tabNS)
+                            }
+                            ReiconIcon(icon: item.reicon, size: 20)
+                                .foregroundStyle(isSelected ? Theme.brand : Theme.textSecondary)
                         }
-                        ReiconIcon(icon: item.reicon, size: 21)
-                            .foregroundStyle(isSelected ? Theme.brand : Theme.textSecondary)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .contentShape(Capsule())

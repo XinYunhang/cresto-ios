@@ -4,6 +4,7 @@ import SwiftData
 struct RootView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.colorScheme) private var colorScheme
 
     @AppStorage("appTheme") private var appTheme = "system"
 
@@ -11,6 +12,7 @@ struct RootView: View {
     /// iOS 17–25 保活集合
     @State private var mountedTabs: Set<AppTab> = [.overview]
     @State private var isQuickAddPresented = false
+    @State private var expandedTaskDraft: QuickAddDraft?
     @State private var isSettingsPresented = false
     @State private var showSplash = true
     @State private var activeSince: Date?
@@ -32,6 +34,25 @@ struct RootView: View {
                 nativeTabView
             } else {
                 legacyTabContainer
+            }
+
+            if isQuickAddPresented {
+                QuickAddOverlay(
+                    onDismiss: {
+                        withAnimation(.snappy(duration: 0.22)) {
+                            isQuickAddPresented = false
+                        }
+                    },
+                    onExpandToEditor: { draft in
+                        withAnimation(.snappy(duration: 0.20)) {
+                            isQuickAddPresented = false
+                        }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.16) {
+                            expandedTaskDraft = draft
+                        }
+                    }
+                )
+                .zIndex(50)
             }
 
             if showSplash {
@@ -59,6 +80,7 @@ struct RootView: View {
                 syncSubscriptions()
             } else {
                 pauseUsage()
+                Persistence.save(context, source: "退后台落盘")
             }
         }
         .onReceive(ticker) { _ in
@@ -71,26 +93,24 @@ struct RootView: View {
             NotificationScheduler.syncAll(tasks)
             AppLog.info("数据已恢复：重排 \(tasks.count) 条提醒")
         }
-        .sheet(isPresented: $isQuickAddPresented) {
-            QuickAddSheet()
+        .sheet(item: $expandedTaskDraft) { draft in
+            TaskEditor(
+                defaultDate: draft.dueDate,
+                defaultTitle: draft.title,
+                defaultUrgency: draft.urgency,
+                defaultTags: draft.tags
+            )
         }
         .sheet(isPresented: $isSettingsPresented) {
             SettingsView()
         }
     }
 
-    // MARK: iOS 26+ 原生液态玻璃 TabView
+    // MARK: iOS 26+ 原生液态玻璃 TabView（5 Tab 概览居中）
 
     @available(iOS 26.0, *)
     private var nativeTabView: some View {
         TabView(selection: $tab) {
-            Tab(value: AppTab.overview) {
-                tabContent(for: .overview)
-                    .background(Theme.bg.ignoresSafeArea())
-            } label: {
-                tabLabel(.overview)
-            }
-
             Tab(value: AppTab.tasks) {
                 tabContent(for: .tasks)
                     .background(Theme.bg.ignoresSafeArea())
@@ -105,11 +125,25 @@ struct RootView: View {
                 tabLabel(.course)
             }
 
+            Tab(value: AppTab.overview) {
+                tabContent(for: .overview)
+                    .background(Theme.bg.ignoresSafeArea())
+            } label: {
+                tabLabel(.overview)
+            }
+
             Tab(value: AppTab.ledger) {
                 tabContent(for: .ledger)
                     .background(Theme.bg.ignoresSafeArea())
             } label: {
                 tabLabel(.ledger)
+            }
+
+            Tab(value: AppTab.memories) {
+                tabContent(for: .memories)
+                    .background(Theme.bg.ignoresSafeArea())
+            } label: {
+                tabLabel(.memories)
             }
 
             if FeatureFlags.enableDeepSeek {
@@ -124,11 +158,16 @@ struct RootView: View {
         .tint(Theme.brand)
     }
 
+    @ViewBuilder
     private func tabLabel(_ item: AppTab) -> some View {
         Label {
             Text(item.title)
         } icon: {
-            Image(uiImage: Reicon.tabImage(item.reicon))
+            if item == .overview {
+                Image(uiImage: Reicon.centerBlueTabImage(item.reicon, isDark: colorScheme == .dark))
+            } else {
+                Image(uiImage: Reicon.tabImage(item.reicon))
+            }
         }
     }
 
@@ -139,11 +178,6 @@ struct RootView: View {
             Theme.bg.ignoresSafeArea()
 
             ZStack {
-                if isMounted(.overview) {
-                    tabContent(for: .overview)
-                        .tabPageVisible(tab == .overview)
-                }
-
                 if isMounted(.tasks) {
                     tabContent(for: .tasks)
                         .tabPageVisible(tab == .tasks)
@@ -154,9 +188,19 @@ struct RootView: View {
                         .tabPageVisible(tab == .course)
                 }
 
+                if isMounted(.overview) {
+                    tabContent(for: .overview)
+                        .tabPageVisible(tab == .overview)
+                }
+
                 if isMounted(.ledger) {
                     tabContent(for: .ledger)
                         .tabPageVisible(tab == .ledger)
+                }
+
+                if isMounted(.memories) {
+                    tabContent(for: .memories)
+                        .tabPageVisible(tab == .memories)
                 }
 
                 if FeatureFlags.enableDeepSeek, isMounted(.api) {
@@ -178,15 +222,21 @@ struct RootView: View {
                 onOpenTasks: { tab = .tasks },
                 onOpenCourse: { tab = .course },
                 onOpenSubscriptions: { tab = .ledger },
-                onAddTask: { isQuickAddPresented = true },
+                onAddTask: {
+                    withAnimation(.snappy(duration: 0.24)) { isQuickAddPresented = true }
+                },
                 onOpenSettings: { isSettingsPresented = true }
             )
         case .tasks:
-            TasksView(onAdd: { isQuickAddPresented = true })
+            TasksView(onAdd: {
+                withAnimation(.snappy(duration: 0.24)) { isQuickAddPresented = true }
+            })
         case .course:
             TimetableView()
         case .ledger:
             SubscriptionMainView()
+        case .memories:
+            MemoriesView()
         case .api:
             DeepSeekMonitorView()
         }

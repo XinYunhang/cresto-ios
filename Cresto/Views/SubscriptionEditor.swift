@@ -30,6 +30,7 @@ struct SubscriptionEditor: View {
     @State private var isPaymentPickerPresented = false
     @State private var editingRateCurrency: SubscriptionCurrency?
     @State private var rateDraft = ""
+    @State private var isSaving = false
 
     init(subscription: Subscription?, initialPreset: SubscriptionPreset? = nil) {
         self.subscription = subscription
@@ -476,8 +477,10 @@ struct SubscriptionEditor: View {
         Button(role: .destructive) {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
             SubscriptionReminderService.cancelPendingNotifications(for: sub)
+            let deletedName = sub.name
             context.delete(sub)
-            try? context.save()
+            Persistence.save(context, source: "删除订阅")
+            AppLog.info("删除订阅：\(deletedName)")
             dismiss()
         } label: {
             Text("删除此订阅")
@@ -489,6 +492,7 @@ struct SubscriptionEditor: View {
     }
 
     private func save() {
+        guard !isSaving else { return }
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty else {
             validation = "请填写订阅名称"
@@ -500,6 +504,7 @@ struct SubscriptionEditor: View {
             return
         }
 
+        isSaving = true
         let calendar = Calendar.current
         let target = subscription ?? Subscription()
         let oldChargeDay = calendar.startOfDay(for: target.nextChargeDate)
@@ -529,10 +534,15 @@ struct SubscriptionEditor: View {
             }
         }
 
-        try? context.save()
-        let all = (try? context.fetch(FetchDescriptor<Subscription>())) ?? []
-        SubscriptionReminderService.sync(all, in: context)
+        Persistence.save(context, source: "保存订阅")
+        AppLog.info((subscription == nil ? "新建订阅：" : "编辑订阅：") + target.name)
+        let ctx = context
         dismiss()
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 180_000_000)
+            let all = (try? ctx.fetch(FetchDescriptor<Subscription>())) ?? []
+            SubscriptionReminderService.sync(all, in: ctx)
+        }
     }
 }
 

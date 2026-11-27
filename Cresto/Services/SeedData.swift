@@ -4,6 +4,8 @@ import SwiftData
 /// 第一次启动塞一点样例，免得打开是一片空白。
 /// 真用起来之后在设置里加一个「清空示例数据」就行。
 enum SeedData {
+    private static let seededDemoKey = "hasSeededInitialDemoTasks"
+
     static func seedIfNeeded(_ context: ModelContext) {
         let taskCount = (try? context.fetchCount(FetchDescriptor<TaskItem>())) ?? 0
         let settingsCount = (try? context.fetchCount(FetchDescriptor<TimetableSettings>())) ?? 0
@@ -12,7 +14,12 @@ enum SeedData {
             context.insert(TimetableSettings())
         }
 
-        if taskCount == 0 {
+        let alreadySeeded = UserDefaults.standard.bool(forKey: seededDemoKey)
+        if taskCount > 0 && !alreadySeeded {
+            UserDefaults.standard.set(true, forKey: seededDemoKey)
+        }
+
+        if !alreadySeeded && taskCount == 0 {
             let calendar = Calendar.current
             let today = calendar.startOfDay(for: Date())
 
@@ -56,10 +63,11 @@ enum SeedData {
             )
 
             [morning, main, night, tomorrow].forEach { context.insert($0) }
+            UserDefaults.standard.set(true, forKey: seededDemoKey)
         }
 
         CourseImporter.importIfNeeded(into: context)
 
-        try? context.save()
+        Persistence.save(context, source: "SeedData")
     }
 }

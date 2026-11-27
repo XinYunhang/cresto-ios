@@ -15,7 +15,7 @@ enum TaskActions {
             spawnNextIfRepeating(task, in: context)
         }
         NotificationScheduler.sync(task)
-        try? context.save()
+        Persistence.save(context, source: "切换待办状态")
         AppLog.info("待办「\(task.title)」→ \(task.isCompleted ? "完成" : "未完成")")
     }
 
@@ -23,7 +23,7 @@ enum TaskActions {
         NotificationScheduler.cancel(id: task.id)
         AppLog.info("删除待办：\(task.title)")
         context.delete(task)
-        try? context.save()
+        Persistence.save(context, source: "删除待办")
     }
 
     /// 重复任务：完成后立刻生成下一次，保留标签、提醒、备注

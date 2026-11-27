@@ -163,8 +163,10 @@ struct CountdownEditor: View {
                     if let item {
                         Button(role: .destructive) {
                             UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            let deletedTitle = item.title
                             context.delete(item)
-                            try? context.save()
+                            Persistence.save(context, source: "删除倒数日")
+                            AppLog.info("删除倒数日：\(deletedTitle)")
                             dismiss()
                         } label: {
                             Text("删除倒数日")
@@ -241,7 +243,8 @@ struct CountdownEditor: View {
             )
             context.insert(created)
         }
-        try? context.save()
+        Persistence.save(context, source: "保存倒数日")
+        AppLog.info((item == nil ? "新建倒数日：" : "编辑倒数日：") + trimmed)
         dismiss()
     }
 }

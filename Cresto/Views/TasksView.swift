@@ -27,13 +27,28 @@ struct TasksView: View {
     var onAdd: () -> Void = {}
 
     @State private var editing: TaskItem?
-    @State private var isEditorPresented = false
     @State private var countdownEditorContext: CountdownStripEditorContext?
-    @State private var showCompleted = false
+    @State private var showRecentCompleted = true
+    @State private var showOlderCompleted = false
     /// 当前左滑展开的行（同一时间最多一条）
     @State private var swipedID: UUID?
     /// 当前元数据堆叠展开的行（互斥：切行时前一行收、新一行同时展）
     @State private var expandedMetaID: UUID?
+
+    private var threeDaysCutoff: Date {
+        let today = Calendar.current.startOfDay(for: Date())
+        return Calendar.current.date(byAdding: .day, value: -2, to: today) ?? today
+    }
+
+    private var recentDoneTasks: [TaskItem] {
+        let cutoff = threeDaysCutoff
+        return doneTasks.filter { ($0.completedAt ?? $0.createdAt) >= cutoff }
+    }
+
+    private var olderDoneTasks: [TaskItem] {
+        let cutoff = threeDaysCutoff
+        return doneTasks.filter { ($0.completedAt ?? $0.createdAt) < cutoff }
+    }
 
     private var grouped: [TaskGroup: [TaskItem]] {
         Dictionary(grouping: openTasks) { TaskGroup.group(for: $0.dueDate) }
@@ -79,8 +94,8 @@ struct TasksView: View {
         .floatingAddButton("新建待办") {
             onAdd()
         }
-        .sheet(isPresented: $isEditorPresented, onDismiss: { editing = nil }) {
-            TaskEditor(task: editing)
+        .sheet(item: $editing) { task in
+            TaskEditor(task: task)
         }
         .sheet(item: $countdownEditorContext) { ctx in
             CountdownEditor(item: ctx.item)
@@ -102,21 +117,23 @@ struct TasksView: View {
                         .foregroundStyle(Theme.textTertiary.opacity(0.65))
                 }
                 Spacer()
-                Button {
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                    countdownEditorContext = CountdownStripEditorContext(item: nil)
-                } label: {
-                    HStack(spacing: 3) {
-                        ReiconIcon(icon: .add, size: 11)
-                        Text("添加")
+                if !countdowns.isEmpty {
+                    Button {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        countdownEditorContext = CountdownStripEditorContext(item: nil)
+                    } label: {
+                        HStack(spacing: 3) {
+                            ReiconIcon(icon: .add, size: 11)
+                            Text("添加")
+                        }
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Theme.brand)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 4)
+                        .background(Capsule().fill(Theme.brandSoft))
                     }
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Theme.brand)
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 4)
-                    .background(Capsule().fill(Theme.brandSoft))
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
 
             if countdowns.isEmpty {
@@ -245,7 +262,6 @@ struct TasksView: View {
                     expandedMetaID: $expandedMetaID,
                     onTap: {
                         editing = task
-                        isEditorPresented = true
                     },
                     onDelete: { delete(task) }
                 )
@@ -254,35 +270,71 @@ struct TasksView: View {
     }
 
     private var completedSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Button {
-                withAnimation(.snappy(duration: 0.25)) { showCompleted.toggle() }
-            } label: {
-                HStack(spacing: 6) {
-                    Text("已完成").font(.system(size: 11.5))
-                    Text("\(doneTasks.count)").font(.system(size: 11.5)).monospacedDigit().opacity(0.6)
-                    Spacer()
-                    ReiconIcon(icon: showCompleted ? .chevronUp : .chevronDown, size: 12)
-                }
-                .foregroundStyle(Theme.textTertiary)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
+        let recent = recentDoneTasks
+        let older = olderDoneTasks
+        return VStack(alignment: .leading, spacing: 10) {
+            if !recent.isEmpty || doneTasks.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Button {
+                        withAnimation(.snappy(duration: 0.25)) { showRecentCompleted.toggle() }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Text("已完成 · 近 3 天").font(.system(size: 11.5))
+                            Text("\(recent.count)").font(.system(size: 11.5, design: .rounded)).monospacedDigit().opacity(0.6)
+                            Spacer()
+                            if !recent.isEmpty {
+                                ReiconIcon(icon: showRecentCompleted ? .chevronUp : .chevronDown, size: 12)
+                            }
+                        }
+                        .foregroundStyle(Theme.textTertiary)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
 
-            if showCompleted {
-                ForEach(doneTasks.prefix(20)) { task in
-                    SwipeableTaskRow(
-                        task: task,
-                        swipedID: $swipedID,
-                        expandedMetaID: $expandedMetaID,
-                        onTap: {
-                            editing = task
-                            isEditorPresented = true
-                        },
-                        onDelete: { delete(task) }
-                    )
+                    if showRecentCompleted && !recent.isEmpty {
+                        ForEach(recent) { task in
+                            SwipeableTaskRow(
+                                task: task,
+                                swipedID: $swipedID,
+                                expandedMetaID: $expandedMetaID,
+                                onTap: { editing = task },
+                                onDelete: { delete(task) }
+                            )
+                        }
+                        .transition(.opacity)
+                    }
                 }
-                .transition(.opacity)
+            }
+
+            if !older.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Button {
+                        withAnimation(.snappy(duration: 0.25)) { showOlderCompleted.toggle() }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Text("更早已完成").font(.system(size: 11.5))
+                            Text("\(older.count)").font(.system(size: 11.5, design: .rounded)).monospacedDigit().opacity(0.6)
+                            Spacer()
+                            ReiconIcon(icon: showOlderCompleted ? .chevronUp : .chevronDown, size: 12)
+                        }
+                        .foregroundStyle(Theme.textTertiary)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+
+                    if showOlderCompleted {
+                        ForEach(older.prefix(20)) { task in
+                            SwipeableTaskRow(
+                                task: task,
+                                swipedID: $swipedID,
+                                expandedMetaID: $expandedMetaID,
+                                onTap: { editing = task },
+                                onDelete: { delete(task) }
+                            )
+                        }
+                        .transition(.opacity)
+                    }
+                }
             }
         }
     }
@@ -449,7 +501,13 @@ private struct SwipeableTaskRow: View {
             TaskRowView(task: task, expandedMetaID: $expandedMetaID, onTap: onTap)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 12)
-                .cardElevation(radius: AppRadius.item)
+                .cardElevation(radius: AppRadius.item, fill: task.isCompleted ? Theme.surface : task.urgency.cardFill)
+                .overlay {
+                    if !task.isCompleted {
+                        RoundedRectangle(cornerRadius: AppRadius.item, style: .continuous)
+                            .strokeBorder(task.urgency.cardBorder, lineWidth: 0.65)
+                    }
+                }
                 .contentShape(RoundedRectangle(cornerRadius: AppRadius.item, style: .continuous))
                 .offset(x: offset)
                 .gesture(dragGesture)
@@ -537,14 +595,14 @@ struct TaskRowView: View {
             .accessibilityLabel(task.isCompleted ? "标记为未完成" : "标记为完成")
 
             HStack(alignment: .center, spacing: 8) {
-                // 标题：tail 截断、布局优先级低于右侧元数据——元数据展开只压缩标题，绝不反推整屏宽度
+                // 标题：未展开时与单一时间/首标签并排；点标签展开全部时压缩内容让出标签空间
                 Text(task.title)
                     .font(.system(size: 14))
                     .foregroundStyle(task.isCompleted ? Theme.textTertiary : Theme.text)
                     .strikethrough(task.isCompleted, color: Theme.textTertiary)
                     .lineLimit(compact ? 2 : 1)
                     .truncationMode(.tail)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(minWidth: compact ? nil : 56, maxWidth: .infinity, alignment: .leading)
                     .layoutPriority(0)
 
                 if !compact {
@@ -553,7 +611,9 @@ struct TaskRowView: View {
                         isExpanded: isMetaExpanded,
                         reduceMotion: reduceMotion,
                         onToggle: {
-                            expandedMetaID?.wrappedValue = (expandedMetaID?.wrappedValue == task.id) ? nil : task.id
+                            withAnimation(reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.84)) {
+                                expandedMetaID?.wrappedValue = (expandedMetaID?.wrappedValue == task.id) ? nil : task.id
+                            }
                         }
                     )
                     .layoutPriority(1)
@@ -589,15 +649,15 @@ struct TaskRowView: View {
         }
     }
 
-    // MARK: stacked-metadata
+    // MARK: stacked-metadata（优先展示时间标签，点击展开全部标签并压缩内容）
 
-    /// 元数据胶囊：紧急程度 / 日期 / 提醒 / 重复 / 子任务 / 标签
+    /// 元数据胶囊：时间标签置首，其次自定义标签 / 提醒 / 重复 / 子任务（紧急程度改由卡片淡底表达）
     private var metaChips: [MetaChipData] {
         var chips: [MetaChipData] = []
         if let due = task.dueDate {
             chips.append(MetaChipData(icon: .calendar, text: due.taskLabel(hasTime: task.hasTime)))
         }
-        for tag in task.tags.prefix(1) {
+        for tag in task.tags {
             chips.append(MetaChipData(icon: .hashtag, text: tag))
         }
         if task.reminder != .none {
@@ -609,37 +669,18 @@ struct TaskRowView: View {
         if !task.subtasks.isEmpty {
             chips.append(MetaChipData(icon: .checklist, text: "\(task.doneSubtaskCount)/\(task.subtasks.count)"))
         }
-
-        // 紧急度固定贴最右（叠放最上层、收起时不被其他胶囊盖住），并保证进前三不被截断
-        if task.urgency != .mild {
-            if chips.count >= 3 {
-                chips = Array(chips.prefix(2))
-            }
-            chips.append(MetaChipData(
-                icon: task.urgency.reicon,
-                text: task.urgency.title,
-                urgency: task.urgency
-            ))
-        } else if chips.count > 3 {
-            chips = Array(chips.prefix(3))
-        }
         return chips
     }
 }
 
-// MARK: - 元数据堆叠（stacked-metadata 复刻）
+// MARK: - 元数据胶囊（收起仅露首枚时间/首标签+计数，点击展开全部标签压缩内容）
 
 struct MetaChipData: Identifiable {
     let id = UUID()
     let icon: Reicon
     let text: String
-    /// 非 nil = 发光圆点紧急度标签（收起只露圆点，展开显示 ● 档位）
-    var urgency: TaskUrgency? = nil
 }
 
-/// stacked-metadata 复刻（v8.2 性能修订）：三枚胶囊右锚叠放，展开时 offset 回 0 铺开。
-/// 收起/展开只改 transform（offset 叠入 ≤60pt，行容器已 clipped 不会外溢），
-/// 间距与尺寸恒定、文字 fixedSize——零布局重排；互斥由外部 expandedMetaID 管理。
 private struct MetaStack: View {
     let chips: [MetaChipData]
     let isExpanded: Bool
@@ -652,14 +693,17 @@ private struct MetaStack: View {
 
     var body: some View {
         Button(action: onToggle) {
-            // 展开/收起只做 transform 偏移（GPU 合成），按 visible.count 准确计算右锚叠入量，
-            // 避免少于 3 枚胶囊时被硬推向右外侧截断。
-            HStack(spacing: 4) {
-                let visible = Array(chips.prefix(3))
-                let lastIndex = max(0, visible.count - 1)
-                ForEach(visible.indices, id: \.self) { index in
-                    chipView(visible[index])
-                        .offset(x: CGFloat(lastIndex - index) * 28 * (isExpanded ? 0 : 1))
+            Group {
+                if isExpanded {
+                    HStack(spacing: 4) {
+                        ForEach(chips) { chip in
+                            MetaChipInline(chip: chip)
+                        }
+                    }
+                    .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .trailing)))
+                } else if let primary = chips.first {
+                    MetaCollapsedPill(chip: primary, extraCount: max(0, chips.count - 1))
+                        .transition(.opacity)
                 }
             }
             .animation(reduceMotion ? nil : spring, value: isExpanded)
@@ -669,69 +713,54 @@ private struct MetaStack: View {
         .opacity(chips.isEmpty ? 0 : 1)
         .accessibilityValue(isExpanded ? "已展开" : "已收起")
     }
-
-    @ViewBuilder
-    private func chipView(_ chip: MetaChipData) -> some View {
-        if let urgency = chip.urgency {
-            MetaUrgencyChip(tier: urgency, isExpanded: isExpanded, reduceMotion: reduceMotion)
-        } else {
-            MetaChipInline(chip: chip)
-        }
-    }
 }
 
-/// 紧急度标签：收起为干净的发光圆点（无模糊半截文字裁切），展开为清晰「● 档位」胶囊。
-private struct MetaUrgencyChip: View {
-    let tier: TaskUrgency
-    let isExpanded: Bool
-    let reduceMotion: Bool
+/// 收起态紧凑胶囊：优先展示时间标签（若有更多标签则在右侧带出 +N）
+private struct MetaCollapsedPill: View {
+    let chip: MetaChipData
+    let extraCount: Int
 
     var body: some View {
-        HStack(spacing: isExpanded ? 5 : 0) {
-            Circle()
-                .fill(tier.tint)
-                .frame(width: 8.5, height: 8.5)
-                .shadow(color: tier.tint.opacity(0.75), radius: 3)
-
-            if isExpanded {
-                Text(tier.title)
-                    .font(.system(size: 10.5, weight: .semibold))
-                    .foregroundStyle(tier.tint)
-                    .fixedSize(horizontal: true, vertical: false)
-                    .transition(.opacity)
+        HStack(spacing: 4) {
+            ReiconIcon(icon: chip.icon, size: 11.5)
+            Text(chip.text)
+                .font(.system(size: 10.5))
+                .fixedSize(horizontal: true, vertical: false)
+                .lineLimit(1)
+            if extraCount > 0 {
+                Text("+\(extraCount)")
+                    .font(.system(size: 9.5, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(Theme.brand)
+                    .padding(.leading, 1)
             }
         }
-        .padding(.horizontal, isExpanded ? 9 : 0)
-        .frame(minWidth: 26)
-        .frame(height: 26)
-        .background(
-            Capsule().fill(tier.tint.opacity(isExpanded ? 0.14 : 0.18))
-        )
-        .overlay(
-            Capsule().strokeBorder(tier.tint.opacity(0.40), lineWidth: 1)
-        )
-        .animation(reduceMotion ? nil : .snappy(duration: 0.22), value: isExpanded)
-        .accessibilityLabel("紧急程度 \(tier.title)")
+        .foregroundStyle(Theme.textSecondary)
+        .padding(.horizontal, 9)
+        .frame(height: 25)
+        .background(Capsule().fill(Theme.surfaceRaised.opacity(0.9)))
+        .overlay(Capsule().strokeBorder(Theme.stroke, lineWidth: 0.5))
+        .fixedSize()
     }
 }
 
-/// 单枚元数据胶囊（spec 小屏当量：9px 水平内边距、4px 图标间距、3px 同场景背景色描边=重叠分界）
+/// 展开态单枚元数据胶囊
 private struct MetaChipInline: View {
     let chip: MetaChipData
 
     var body: some View {
         HStack(spacing: 4) {
-            ReiconIcon(icon: chip.icon, size: 12)
+            ReiconIcon(icon: chip.icon, size: 11.5)
             Text(chip.text)
                 .font(.system(size: 10.5))
                 .fixedSize(horizontal: true, vertical: false)
                 .lineLimit(1)
         }
-        .foregroundStyle(Theme.textTertiary)
-        .padding(.horizontal, 9)
-        .frame(height: 26)
-        .background(Capsule().fill(Theme.surfaceRaised))
-        .overlay(Capsule().strokeBorder(Theme.surface, lineWidth: 3))
+        .foregroundStyle(Theme.textSecondary)
+        .padding(.horizontal, 8.5)
+        .frame(height: 25)
+        .background(Capsule().fill(Theme.surfaceRaised.opacity(0.92)))
+        .overlay(Capsule().strokeBorder(Theme.stroke, lineWidth: 0.5))
         .fixedSize()
     }
 }

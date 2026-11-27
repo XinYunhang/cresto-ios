@@ -100,16 +100,29 @@ struct OverviewView: View {
         }
     }
 
-    // MARK: 顶部标题（与待办/订阅同位置规范对齐）
+    // MARK: 顶部标题（日期眉标 + 衬线体哲思句，拉开层级感）
+
+    private var todayEyebrow: String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = "M月d日 · EEEE"
+        return formatter.string(from: now)
+    }
 
     private var header: some View {
         HStack(alignment: .center, spacing: 10) {
-            Text("人，是会思考的芦苇")
-                .font(.system(size: 22, weight: .medium))
-                .tracking(-0.4)
-                .foregroundStyle(Theme.text)
-                .lineLimit(1)
-                .minimumScaleFactor(0.82)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(todayEyebrow)
+                    .font(.system(size: 11, weight: .medium))
+                    .tracking(1.0)
+                    .foregroundStyle(Theme.textTertiary)
+                Text("人，是会思考的芦苇")
+                    .font(.system(size: 22, weight: .semibold, design: .serif))
+                    .tracking(0.8)
+                    .foregroundStyle(Theme.text)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.80)
+            }
 
             Spacer(minLength: 6)
 
@@ -168,30 +181,99 @@ struct OverviewView: View {
         }
     }
 
-    // MARK: 左上 2×2 · 当前 / 下一节课
+    // MARK: 左上 2×2 · 今日/明日课表概览（已移除固定上下课时刻与实时状态）
+
+    private struct CourseOverviewSnapshot {
+        let pillTitle: String
+        let primaryCourse: Course
+        let primarySlot: CourseSlot
+        let locationText: String
+        let secondaryHint: String?
+    }
+
+    private var courseOverview: CourseOverviewSnapshot? {
+        guard !courses.isEmpty else { return nil }
+        let calendar = Calendar.current
+        let settings = timetableSettings.first ?? TimetableSettings()
+        let todayWeek = settings.weekNumber(for: now)
+        let weekdayComp = calendar.component(.weekday, from: now)
+        let todayWeekday = ((weekdayComp + 5) % 7) + 1
+
+        func activeOn(week: Int, weekday: Int) -> [(course: Course, slot: CourseSlot)] {
+            var list: [(course: Course, slot: CourseSlot)] = []
+            for course in courses {
+                for slot in course.slots where slot.weekday == weekday && slot.isActive(inWeek: week) {
+                    list.append((course, slot))
+                }
+            }
+            list.sort { $0.slot.startPeriod < $1.slot.startPeriod }
+            return list
+        }
+
+        let todaySlots = activeOn(week: todayWeek, weekday: todayWeekday)
+        if let first = todaySlots.first {
+            let locRaw = first.slot.location.isEmpty ? first.course.location : first.slot.location
+            let loc = locRaw.trimmingCharacters(in: .whitespacesAndNewlines)
+            let hint = todaySlots.count > 1 ? "还有 \(todaySlots.count - 1) 门课" : nil
+            return CourseOverviewSnapshot(
+                pillTitle: "今日课表 · \(todaySlots.count) 节",
+                primaryCourse: first.course,
+                primarySlot: first.slot,
+                locationText: loc.isEmpty ? "教室待定" : loc,
+                secondaryHint: hint
+            )
+        }
+
+        if let tomorrow = calendar.date(byAdding: .day, value: 1, to: now) {
+            let tomorrowWeek = settings.weekNumber(for: tomorrow)
+            let tomorrowWeekday = (todayWeekday % 7) + 1
+            let tomorrowSlots = activeOn(week: tomorrowWeek, weekday: tomorrowWeekday)
+            if let first = tomorrowSlots.first {
+                let locRaw = first.slot.location.isEmpty ? first.course.location : first.slot.location
+                let loc = locRaw.trimmingCharacters(in: .whitespacesAndNewlines)
+                let hint = tomorrowSlots.count > 1 ? "明日共 \(tomorrowSlots.count) 门" : nil
+                return CourseOverviewSnapshot(
+                    pillTitle: "明日首节",
+                    primaryCourse: first.course,
+                    primarySlot: first.slot,
+                    locationText: loc.isEmpty ? "教室待定" : loc,
+                    secondaryHint: hint
+                )
+            }
+        }
+
+        return nil
+    }
 
     private var courseHeroCard: some View {
-        let focus = TimetableLiveMath.focusCourse(
-            courses: courses,
-            settings: timetableSettings.first,
-            now: now
-        )
+        let overview = courseOverview
 
         return Button(action: onOpenCourse) {
-            if let focus {
-                let tone = Theme.courseTone(focus.course.shade)
+            if let overview {
+                let tone = Theme.courseTone(overview.primaryCourse.shade)
                 VStack(alignment: .leading, spacing: 0) {
-                    courseStatusPill(focus: focus, tone: tone)
+                    HStack(spacing: 5) {
+                        Circle()
+                            .fill(tone.fg)
+                            .frame(width: 5, height: 5)
+                        Text(overview.pillTitle)
+                            .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                            .monospacedDigit()
+                    }
+                    .foregroundStyle(tone.fg)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 4)
+                    .background(Capsule().fill(tone.bg))
 
                     Spacer(minLength: 8)
 
-                    Text(focus.course.name)
+                    Text(overview.primaryCourse.name)
                         .font(.system(size: 18, weight: .semibold))
                         .foregroundStyle(Theme.text)
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
 
-                    Text(focus.locationText)
+                    Text(overview.locationText)
                         .font(.system(size: 12.5, weight: .medium))
                         .foregroundStyle(Theme.textSecondary)
                         .lineLimit(1)
@@ -199,7 +281,22 @@ struct OverviewView: View {
 
                     Spacer(minLength: 10)
 
-                    courseFooter(focus: focus, tone: tone)
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text("第 \(overview.primarySlot.startPeriod)-\(overview.primarySlot.endPeriod) 节")
+                            Spacer()
+                            if let hint = overview.secondaryHint {
+                                Text(hint)
+                            }
+                        }
+                        .font(.system(size: 11, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(Theme.textTertiary)
+
+                        Capsule()
+                            .fill(tone.bg)
+                            .frame(height: 4)
+                    }
                 }
                 .padding(15)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -226,12 +323,12 @@ struct OverviewView: View {
 
                     Spacer(minLength: 8)
 
-                    Text(courses.isEmpty ? "暂无课表" : "今日课程已结束")
+                    Text(courses.isEmpty ? "暂无课表" : "今明两天无课")
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(Theme.text)
                         .lineLimit(2)
 
-                    Text(courses.isEmpty ? "导入或添加课程" : "好好休息，明天再见")
+                    Text(courses.isEmpty ? "导入或添加课程" : "轻点查看整周安排")
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.textTertiary)
                         .padding(.top, 4)
@@ -251,75 +348,6 @@ struct OverviewView: View {
             }
         }
         .buttonStyle(PressableStyle())
-    }
-
-    private func courseStatusPill(focus: CourseFocus, tone: CourseTone) -> some View {
-        let label: String
-        let isOngoing: Bool
-        switch focus.status {
-        case .ongoing(_, let remaining):
-            isOngoing = true
-            label = "进行中 · 剩 \(remaining)m"
-        case .upcoming(let minutes):
-            isOngoing = false
-            if focus.isToday {
-                if minutes < 60 {
-                    label = "\(minutes) 分钟后"
-                } else {
-                    let h = minutes / 60
-                    let m = minutes % 60
-                    label = m == 0 ? "\(h) 小时后" : "\(h)h\(m)m 后"
-                }
-            } else {
-                label = "\(focus.dayLabel)首节"
-            }
-        case .ended:
-            isOngoing = false
-            label = "已结束"
-        }
-
-        return HStack(spacing: 5) {
-            Circle()
-                .fill(isOngoing ? Color.white : tone.fg)
-                .frame(width: 5, height: 5)
-            Text(label)
-                .font(.system(size: 10.5, weight: .semibold, design: .rounded))
-                .monospacedDigit()
-        }
-        .foregroundStyle(isOngoing ? Color.white : tone.fg)
-        .padding(.horizontal, 9)
-        .padding(.vertical, 4)
-        .background(Capsule().fill(isOngoing ? tone.fg : tone.bg))
-    }
-
-    @ViewBuilder
-    private func courseFooter(focus: CourseFocus, tone: CourseTone) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("\(focus.slot.startPeriod)-\(focus.slot.endPeriod) 节")
-                Spacer()
-                Text(focus.timeRangeText)
-            }
-            .font(.system(size: 11, design: .rounded))
-            .monospacedDigit()
-            .foregroundStyle(Theme.textTertiary)
-
-            if case .ongoing(let progress, _) = focus.status {
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        Capsule().fill(Theme.surfaceWell)
-                        Capsule()
-                            .fill(tone.fg)
-                            .frame(width: max(6, geo.size.width * progress))
-                    }
-                }
-                .frame(height: 4)
-            } else {
-                Capsule()
-                    .fill(tone.bg)
-                    .frame(height: 4)
-            }
-        }
     }
 
     // MARK: 右上 1×1 · 自定义多倒数日预览（绝不默认放假）

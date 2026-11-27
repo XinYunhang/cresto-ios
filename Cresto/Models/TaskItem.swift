@@ -63,6 +63,27 @@ enum TaskUrgency: Int, Codable, CaseIterable, Identifiable {
         }
     }
 
+    /// 待办卡片淡色背景（替代旧版胶囊标签，深浅主题自适应）
+    var cardFill: Color {
+        Color(uiColor: UIColor { trait in
+            let isDark = trait.userInterfaceStyle == .dark
+            switch self {
+            case .mild: return UIColor(rgb: isDark ? 0x141D2E : 0xEEF5FF)
+            case .important: return UIColor(rgb: isDark ? 0x241D12 : 0xFFF8EB)
+            case .urgent: return UIColor(rgb: isDark ? 0x27151A : 0xFFF1F3)
+            }
+        })
+    }
+
+    /// 与卡片淡色背景呼应的微弱描边
+    var cardBorder: Color {
+        switch self {
+        case .mild: return Color(hex: 0x60A5FA, opacity: 0.24)
+        case .important: return Color(hex: 0xF59E0B, opacity: 0.26)
+        case .urgent: return Color(hex: 0xF43F5E, opacity: 0.26)
+        }
+    }
+
     /// 点击循环：轻微 → 重要 → 紧急 → 轻微
     var next: TaskUrgency {
         switch self {

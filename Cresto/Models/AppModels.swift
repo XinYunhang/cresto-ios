@@ -12,31 +12,33 @@ enum FeatureFlags {
 // MARK: - 底栏
 
 enum AppTab: String, CaseIterable, Identifiable {
-    case overview, tasks, course, ledger, api
+    case tasks, course, overview, ledger, memories, api
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
-        case .overview: return "概览"
         case .tasks: return "待办"
         case .course: return "课表"
+        case .overview: return "概览"
         case .ledger: return "订阅"
+        case .memories: return "纪念"
         case .api: return "API"
         }
     }
 
     var reicon: Reicon {
         switch self {
-        case .overview: return .grid
         case .tasks: return .checkCircle
         case .course: return .calendarDays
+        case .overview: return .grid
         case .ledger: return .wallet
+        case .memories: return .star
         case .api: return .cpu
         }
     }
 
-    /// 底栏实际展示的 Tab：DeepSeek 关闭时隐藏 API 页，保持 4 图标布局
+    /// 底栏实际展示的 Tab：DeepSeek 关闭时保持「待办 | 课表 | 概览(中) | 订阅 | 纪念」5 图标布局
     static var visible: [AppTab] {
         allCases.filter { $0 != .api || FeatureFlags.enableDeepSeek }
     }

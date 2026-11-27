@@ -87,6 +87,30 @@ extension Reicon {
         }
         .withRenderingMode(.alwaysTemplate)
     }
+
+    /// 5-Tab 居中「概览」蓝色块图标（圆角钴蓝底 + 白色宫格图标，保持原色不受 Tab 选中着色冲刷）
+    static func centerBlueTabImage(_ icon: Reicon, isDark: Bool) -> UIImage {
+        let target = CGSize(width: 36, height: 26)
+        let renderer = UIGraphicsImageRenderer(size: target)
+        return renderer.image { _ in
+            let rect = CGRect(origin: .zero, size: target)
+            let path = UIBezierPath(roundedRect: rect, cornerRadius: 8.5)
+            UIColor(rgb: isDark ? 0x6B8AFF : 0x3B5BDB).setFill()
+            path.fill()
+
+            if let base = UIImage(named: icon.rawValue)?.withTintColor(.white, renderingMode: .alwaysOriginal) {
+                let iconSize: CGFloat = 15
+                let iconRect = CGRect(
+                    x: (target.width - iconSize) / 2,
+                    y: (target.height - iconSize) / 2,
+                    width: iconSize,
+                    height: iconSize
+                )
+                base.draw(in: iconRect)
+            }
+        }
+        .withRenderingMode(.alwaysOriginal)
+    }
 }
 
 extension Image {
@@ -118,6 +142,11 @@ enum BrandIcon: String, CaseIterable, Identifiable {
 
     var assetName: String {
         self == .generic ? "reicon-card" : rawValue
+    }
+
+    /// 单色品牌图标（OpenAI / Apple）走模板着色，浅色模式呈炭黑、深色模式呈纯白，避免白底隐身
+    var usesAdaptiveTemplate: Bool {
+        self == .openai || self == .apple
     }
 
     static func from(raw: String) -> BrandIcon {
@@ -173,6 +202,13 @@ struct BrandLogo: View {
         if brand == .generic {
             ReiconIcon(icon: .card, size: size)
                 .foregroundStyle(Theme.text)
+        } else if brand.usesAdaptiveTemplate {
+            Image(uiImage: (UIImage(named: brand.assetName) ?? UIImage()).withRenderingMode(.alwaysTemplate))
+                .resizable()
+                .interpolation(.high)
+                .scaledToFit()
+                .foregroundStyle(Theme.text)
+                .frame(width: size, height: size)
         } else {
             Image(brand.assetName)
                 .resizable()

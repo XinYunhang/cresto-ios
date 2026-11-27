@@ -156,7 +156,6 @@ struct SettingsView: View {
             guard appTheme != value else { return }
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
             appTheme = value
-            ThemeTransition.apply(value, animated: true)
             AppLog.info("切换主题：\(value)")
         } label: {
             VStack(spacing: 7) {

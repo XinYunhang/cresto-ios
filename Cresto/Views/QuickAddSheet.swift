@@ -2,11 +2,23 @@ import SwiftUI
 import SwiftData
 import UIKit
 
-/// Flomo 风格悬空液态玻璃快速输入浮卡（iOS 26 走原生玻璃材质与按钮，iOS 17–25 毛玻璃兜底）。
-struct QuickAddSheet: View {
+/// 从快速悬浮卡丝滑过渡到完整编辑页时的草稿载体
+struct QuickAddDraft: Identifiable {
+    let id = UUID()
+    let title: String
+    let dueDate: Date?
+    let urgency: TaskUrgency
+    let tags: [String]
+}
+
+/// Flomo 风格悬空液态玻璃快速输入浮卡（直接叠放于 RootView 顶层，告别 sheet 底层纯色块与宽度偏差）。
+/// iOS 26 走原生玻璃材质与按钮，iOS 17–25 毛玻璃兜底；点「更多选项」平滑收起浮卡并滑出 TaskEditor。
+struct QuickAddOverlay: View {
     @Environment(\.modelContext) private var context
-    @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
+
+    var onDismiss: () -> Void
+    var onExpandToEditor: (QuickAddDraft) -> Void
 
     @State private var text = ""
     @State private var choice: DueChoice = .today
@@ -14,7 +26,6 @@ struct QuickAddSheet: View {
     @State private var tags: [String] = []
     @State private var isAddingTag = false
     @State private var tagDraft = ""
-    @State private var expanded = false
     @FocusState private var focused: Bool
 
     private let hapticSelect = UISelectionFeedbackGenerator()
@@ -54,40 +65,30 @@ struct QuickAddSheet: View {
     }
 
     var body: some View {
-        Group {
-            if expanded {
-                TaskEditor(
-                    defaultDate: choice.date,
-                    defaultTitle: text,
-                    defaultUrgency: urgency,
-                    defaultTags: tags
-                )
-            } else {
-                floatingCard
+        ZStack(alignment: .bottom) {
+            Color.black
+                .opacity(colorScheme == .dark ? 0.38 : 0.16)
+                .ignoresSafeArea()
+                .onTapGesture { close() }
+
+            cardContent
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 14)
+                .modifier(QuickCardGlassModifier(colorScheme: colorScheme))
+                .padding(.horizontal, 8)
+                .padding(.bottom, 8)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
+        .onAppear {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                focused = true
             }
         }
-        .presentationDetents(expanded ? [.large] : [.height(246)])
-        .presentationDragIndicator(.hidden)
-        .presentationBackground(.clear)
-        .onAppear { focused = true }
         .alert("添加标签", isPresented: $isAddingTag) {
             TextField("5 个字以内", text: $tagDraft)
             Button("添加") { commitTag() }
             Button("取消", role: .cancel) { tagDraft = "" }
-        }
-    }
-
-    private var floatingCard: some View {
-        VStack(spacing: 0) {
-            Spacer(minLength: 0)
-
-            cardContent
-                .padding(.horizontal, 16)
-                .padding(.top, 10)
-                .padding(.bottom, 14)
-                .modifier(QuickCardGlassModifier(colorScheme: colorScheme))
-                .padding(.horizontal, 12)
-                .padding(.bottom, 8)
         }
     }
 
@@ -97,6 +98,12 @@ struct QuickAddSheet: View {
                 .fill(Theme.textTertiary.opacity(0.35))
                 .frame(width: 36, height: 4)
                 .frame(maxWidth: .infinity)
+                .gesture(
+                    DragGesture(minimumDistance: 12)
+                        .onEnded { value in
+                            if value.translation.height > 32 { close() }
+                        }
+                )
 
             TextField("现在的想法是…", text: $text, axis: .vertical)
                 .textFieldStyle(.plain)
@@ -104,7 +111,7 @@ struct QuickAddSheet: View {
                 .foregroundStyle(Theme.text)
                 .lineLimit(2...5)
                 .focused($focused)
-                .frame(minHeight: 72, alignment: .topLeading)
+                .frame(minHeight: 74, alignment: .topLeading)
                 .submitLabel(.done)
                 .onSubmit(add)
 
@@ -148,12 +155,10 @@ struct QuickAddSheet: View {
 
     private var toolbarButtons: some View {
         HStack(spacing: 8) {
-            // # 标签
             toolIconButton(.hashtag, label: "标签") {
                 isAddingTag = true
             }
 
-            // 日期轮换胶囊
             Button {
                 hapticSelect.selectionChanged()
                 withAnimation(.snappy(duration: 0.18)) { choice = choice.next }
@@ -170,7 +175,6 @@ struct QuickAddSheet: View {
             }
             .buttonStyle(.plain)
 
-            // 简洁三档紧急度
             Button {
                 hapticSelect.selectionChanged()
                 withAnimation(.snappy(duration: 0.18)) { urgency = urgency.next }
@@ -189,14 +193,12 @@ struct QuickAddSheet: View {
             }
             .buttonStyle(.plain)
 
-            // 展开完整编辑页
             toolIconButton(.sliderHorizontal, label: "更多选项") {
-                withAnimation(.snappy(duration: 0.2)) { expanded = true }
+                expandToFullEditor()
             }
 
             Spacer(minLength: 4)
 
-            // 发送 / 添加键
             Button(action: add) {
                 ReiconIcon(icon: .check, size: 16)
                     .foregroundStyle(Color.white)
@@ -228,6 +230,22 @@ struct QuickAddSheet: View {
         if !tags.contains(value) { tags.append(value) }
     }
 
+    private func close() {
+        focused = false
+        onDismiss()
+    }
+
+    private func expandToFullEditor() {
+        focused = false
+        let draft = QuickAddDraft(
+            title: text,
+            dueDate: choice.date,
+            urgency: urgency,
+            tags: tags
+        )
+        onExpandToEditor(draft)
+    }
+
     private func add() {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let task = TaskItem(
@@ -238,8 +256,9 @@ struct QuickAddSheet: View {
         )
         context.insert(task)
         NotificationScheduler.sync(task)
-        try? context.save()
-        dismiss()
+        Persistence.save(context, source: "快速新建待办")
+        AppLog.info("新建待办：\(task.title)")
+        close()
     }
 }
 
@@ -249,7 +268,7 @@ private struct QuickCardGlassModifier: ViewModifier {
     let colorScheme: ColorScheme
 
     func body(content: Content) -> some View {
-        let shape = RoundedRectangle(cornerRadius: 28, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: 26, style: .continuous)
         if #available(iOS 26.0, *) {
             content
                 .glassEffect(.regular, in: shape)

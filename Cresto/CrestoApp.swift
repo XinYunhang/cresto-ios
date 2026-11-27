@@ -6,26 +6,10 @@ struct CrestoApp: App {
     private let container: ModelContainer
 
     init() {
-        do {
-            container = try ModelContainer(
-                for: TaskItem.self,
-                Subtask.self,
-                Course.self,
-                CourseSlot.self,
-                TimetableSettings.self,
-                DailyUsage.self,
-                DeepSeekDay.self,
-                DeepSeekState.self,
-                WeReadDay.self,
-                WeReadBook.self,
-                Subscription.self,
-                CountdownItem.self
-            )
-        } catch {
-            fatalError("SwiftData 容器创建失败：\(error)")
-        }
+        container = Persistence.makeContainer()
 
         SeedData.seedIfNeeded(container.mainContext)
+        Persistence.logLaunchDiagnostics(in: container.mainContext)
         BackupService.makeDailySnapshotIfNeeded(in: container.mainContext)
         NotificationScheduler.requestAuthorization()
     }
